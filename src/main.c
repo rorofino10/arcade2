@@ -19,9 +19,9 @@ const char *gameTitle = "Game Title";
 
 const _Float16 BLUE_ENEMY_BULLETS = 6.0f;
 const _Float16 FULL_CIRCLE = 360.0f;
-const uint8_t DEFAULT_PLAYER_SPEED = 100;
-const uint8_t DEFAULT_ENEMY_SPEED = 40;
-const uint8_t DEFAULT_BULLET_SPEED = 200;
+const SPEED DEFAULT_PLAYER_SPEED = 100.0f;
+const SPEED DEFAULT_ENEMY_SPEED = 40.0f;
+const SPEED DEFAULT_BULLET_SPEED = 500.0f;
 const COOLDOWN DEFAULT_SHOOTING_COOLDOWN = 0.5f;
 const LIFETIME DEFAULT_BULLET_LIFETIME = 2.0f;
 const LIFETIME DEFAULT_POWERUP_SPEED_LIFETIME = 2.0f;
@@ -30,11 +30,21 @@ const Vector2 DEFAULT_ENTITY_SIZE = (Vector2){50, 50};
 const Vector2 DEFAULT_ENTITY_FACING = (Vector2){1, 0};
 const Vector2 DEFAULT_BULLET_SIZE = (Vector2){11, 5};
 
+const uint16_t worldSize = 1000;
+
 uint8_t wave = 1;
-const EntityID redEnemiesIncrease = 2;
+
+const SPEED redEnemiesSpeedIncrease = 10;
+SPEED redEnemiesSpeed = DEFAULT_ENEMY_SPEED;
+const EntityID redEnemiesIncrease = 3;
 EntityID redEnemiesLeftToSpawn = 0;
 EntityID redEnemiesToSpawn = 0;
 EntityID redEnemiesRemaining = 0;
+
+const EntityID blueEnemiesIncrease = 1;
+EntityID blueEnemiesLeftToSpawn = 0;
+EntityID blueEnemiesToSpawn = 0;
+EntityID blueEnemiesRemaining = 0;
 
 const COOLDOWN waveRefreshCooldown = 2.0f;
 COOLDOWN waveRefreshCooldownRemaining = 2.0f;
@@ -44,11 +54,24 @@ const COOLDOWN spawnCooldown = 0.5f;
 COOLDOWN spawnCooldownRemaining = 0.0f;
 
 const uint16_t PLAYER_SAFE_RADIUS = 100;
+const uint16_t ENTITY_SPAWN_RADIUS = 300;
+
+const LIFETIME DEFAULT_SHAKE_DURATION = 0.5f;
+const _Float16 DEFAULT_SHAKE_INTENSITY = 5.0f;
+LIFETIME shakeLifetime = 0.0f;
+
+const LIFETIME DEFAULT_BASE_ZOOM = 1.0f;
+const LIFETIME DEFAULT_ZOOM_DURATION = 2.0f;
+const _Float16 DEFAULT_ZOOM_OUT_INTENSITY = 0.5f;
+const _Float16 DEFAULT_ZOOM_IN_INTENSITY = 2.0f;
+_Float16 zoomIntensity = DEFAULT_BASE_ZOOM;
+LIFETIME zoomLifetime = 0.0f;
 
 typedef enum GameState
 {
     PLAYING,
     LOST,
+    PAUSED,
 } GameState;
 
 GameState gameState = PLAYING;
@@ -95,23 +118,25 @@ typedef struct
     bool isPowerupShootingActive;
 } Entity;
 
-const uint8_t entitiesCount = UINT8_MAX;
+const EntityID entitiesCount = UINT8_MAX - 1;
 EntityID playerID = 0;
 Entity *entities = NULL;
 Texture2D textures[ENTITY_TYPE_COUNT];
 Music backgroundMusic;
 Sound soundEffects[SOUND_EFFECT_COUNT];
 
-Camera2D camera = {.offset = (Vector2){screenWidth / 2, screenHeight / 2}, .rotation = 0.0f, .zoom = 1.0f};
+Camera2D camera = {.offset = (Vector2){screenWidth / 2, screenHeight / 2}, .rotation = 0.0f, .zoom = DEFAULT_BASE_ZOOM};
 
 Vector2 RandomSpawnPosition(Vector2 playerPos)
 {
     Vector2 pos;
-    do
-    {
-        pos.x = GetRandomValue(-screenWidth / 2, screenWidth / 2);
-        pos.y = GetRandomValue(-screenHeight / 2, screenHeight / 2);
-    } while (Vector2Distance(playerPos, pos) < PLAYER_SAFE_RADIUS);
+    float distance;
+    float angle = ((float)GetRandomValue(0, 360)) * DEG2RAD;
+
+    distance = (float)GetRandomValue((int)PLAYER_SAFE_RADIUS, ENTITY_SPAWN_RADIUS);
+
+    pos.x = playerPos.x + cosf(angle) * distance;
+    pos.y = playerPos.y + sinf(angle) * distance;
     return pos;
 }
 
@@ -152,19 +177,26 @@ EntityID SpawnPlayer()
 EntityID SpawnRedEnemy()
 {
     Vector2 position = RandomSpawnPosition(entities[playerID].position);
-    EntityID enemyId = SpawnEntity(position, DEFAULT_ENTITY_SIZE, DEFAULT_ENEMY_SPEED, ENTITY_RED_ENEMY);
+    EntityID enemyId = SpawnEntity(position, DEFAULT_ENTITY_SIZE, redEnemiesSpeed, ENTITY_RED_ENEMY);
+    spawnCooldownRemaining = spawnCooldown;
+    redEnemiesLeftToSpawn--;
+    redEnemiesRemaining++;
     return enemyId;
 }
 EntityID SpawnBlueEnemy()
 {
     Vector2 position = RandomSpawnPosition(entities[playerID].position);
     EntityID enemyId = SpawnEntity(position, DEFAULT_ENTITY_SIZE, 0.0f, ENTITY_BLUE_ENEMY);
+    spawnCooldownRemaining = spawnCooldown;
+    blueEnemiesLeftToSpawn--;
+    blueEnemiesRemaining++;
     return enemyId;
 }
 EntityID SpawnPowerupSpeed()
 {
     Vector2 position = RandomSpawnPosition(entities[playerID].position);
     EntityID powerupId = SpawnEntity(position, DEFAULT_ENTITY_SIZE, 0.0f, ENTITY_POWERUP_SPEED);
+
     return powerupId;
 }
 EntityID SpawnPowerupShooting()
@@ -177,6 +209,7 @@ EntityID SpawnExplosion()
 {
     EntityID explosionId = SpawnEntity(Vector2Zero(), DEFAULT_ENTITY_SIZE, 0.0f, ENTITY_EXPLOSION);
     PlaySound(soundEffects[SOUND_EFFECT_EXPLOSION]);
+    shakeLifetime = DEFAULT_SHAKE_DURATION;
     return explosionId;
 }
 EntityID SpawnBullet()
@@ -216,15 +249,22 @@ Rectangle MakeRectangleFromCenter(Vector2 center, Vector2 size)
 
 void GenerateWave()
 {
+    SpawnPowerupShooting();
+    SpawnPowerupSpeed();
     isWaveInProgress = true;
     waveRefreshCooldownRemaining = waveRefreshCooldown;
+
     redEnemiesToSpawn += redEnemiesIncrease;
     redEnemiesLeftToSpawn = redEnemiesToSpawn;
+    redEnemiesSpeed += redEnemiesSpeedIncrease;
+
+    blueEnemiesToSpawn += blueEnemiesIncrease;
+    blueEnemiesLeftToSpawn = blueEnemiesToSpawn;
 }
 
 void CheckWaveEnded()
 {
-    if (redEnemiesRemaining == 0)
+    if (redEnemiesRemaining == 0 && blueEnemiesRemaining == 0)
     {
         wave++;
         isWaveInProgress = false;
@@ -238,6 +278,9 @@ void ApplyPowerupSpeed(EntityID entityId, EntityID powerupId)
     entities[entityId].powerupSpeedLifetime = DEFAULT_POWERUP_SPEED_LIFETIME;
     entities[entityId].isPowerupSpeedActive = true;
     entities[powerupId].isAlive = false;
+
+    zoomLifetime = DEFAULT_ZOOM_DURATION;
+    zoomIntensity = DEFAULT_ZOOM_IN_INTENSITY;
 }
 
 void ApplyPowerupShooting(EntityID entityId, EntityID powerupId)
@@ -247,6 +290,9 @@ void ApplyPowerupShooting(EntityID entityId, EntityID powerupId)
     entities[entityId].powerupShootingLifetime = DEFAULT_POWERUP_SHOOTING_LIFETIME;
     entities[entityId].isPowerupShootingActive = true;
     entities[powerupId].isAlive = false;
+
+    zoomLifetime = DEFAULT_ZOOM_DURATION;
+    zoomIntensity = DEFAULT_ZOOM_OUT_INTENSITY;
 }
 
 void handleBlueEnemyDeath(EntityID blueEnemyId)
@@ -259,6 +305,7 @@ void handleBlueEnemyDeath(EntityID blueEnemyId)
 
         ShootBullet(blueEnemyId, dir);
     }
+    blueEnemiesRemaining--;
 }
 void handleRedEnemyDeath(EntityID entityId)
 {
@@ -349,6 +396,9 @@ void HandleCollisions()
 
 void Input()
 {
+    if (IsKeyPressed(KEY_P))
+        gameState = PAUSED;
+
     Vector2 direction = {0};
     if (IsKeyDown(KEY_W))
         direction.y -= 1;
@@ -375,31 +425,77 @@ void UpdateWave()
         GenerateWave();
     if (isWaveInProgress)
     {
-        if (redEnemiesLeftToSpawn != 0)
+        if (redEnemiesLeftToSpawn != 0 || blueEnemiesLeftToSpawn != 0)
         {
             if (spawnCooldownRemaining > 0.0f)
                 spawnCooldownRemaining -= GetFrameTime();
-            if (spawnCooldownRemaining <= 0.0f)
+            if (spawnCooldownRemaining <= 0.0f && redEnemiesLeftToSpawn != 0)
             {
                 SpawnRedEnemy();
-                spawnCooldownRemaining = spawnCooldown;
-                redEnemiesLeftToSpawn--;
-                redEnemiesRemaining++;
+            }
+            if (spawnCooldownRemaining <= 0.0f && blueEnemiesLeftToSpawn != 0)
+            {
+                SpawnBlueEnemy();
             }
         }
     }
+}
+
+void UpdateCameraMovement()
+{
+    camera.target = entities[playerID].position;
+    if (shakeLifetime > 0.0f)
+    {
+        shakeLifetime -= GetFrameTime();
+
+        float offsetX = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
+        float offsetY = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
+
+        float fade = shakeLifetime / DEFAULT_SHAKE_DURATION;
+
+        camera.offset.x += offsetX * DEFAULT_SHAKE_INTENSITY * fade;
+        camera.offset.y += offsetY * DEFAULT_SHAKE_INTENSITY * fade;
+    }
+    if (zoomLifetime > 0.0f)
+    {
+        float zoomChange = 0.0f;
+        zoomLifetime -= GetFrameTime();
+        float elapsed = DEFAULT_ZOOM_DURATION - zoomLifetime;
+
+        float phaseOut = 0.25f;
+        float phaseIn = 0.25f;
+
+        if (elapsed < phaseOut)
+        {
+            float t = elapsed / phaseOut;
+            zoomChange = DEFAULT_BASE_ZOOM + (zoomIntensity - DEFAULT_BASE_ZOOM) * t;
+        }
+        else if (elapsed > DEFAULT_ZOOM_DURATION - phaseIn)
+        {
+            float t = (DEFAULT_ZOOM_DURATION - elapsed) / phaseIn;
+            zoomChange = DEFAULT_BASE_ZOOM + (zoomIntensity - DEFAULT_BASE_ZOOM) * t;
+        }
+        else
+        {
+            zoomChange = zoomIntensity;
+        }
+        camera.zoom = zoomChange;
+    }
+    else
+        camera.zoom = DEFAULT_BASE_ZOOM;
 }
 
 void Update()
 {
     UpdateMusicStream(backgroundMusic);
 
-    camera.target = entities[playerID].position;
     for (EntityID i = 0; i < entitiesCount; i++)
     {
         if (!entities[i].isAlive)
             continue;
-        entities[i].position = Vector2Add(entities[i].position, Vector2Scale(entities[i].direction, entities[i].speed * GetFrameTime()));
+        Vector2 newPos = Vector2Add(entities[i].position, Vector2Scale(entities[i].direction, entities[i].speed * GetFrameTime()));
+        if (Vector2Distance(newPos, Vector2Zero()) <= worldSize)
+            entities[i].position = newPos;
         if (entities[i].lifetime < 0.0f)
             entities[i].isAlive = false;
         switch (entities[i].type)
@@ -437,15 +533,32 @@ void Update()
     }
     HandleCollisions();
     UpdateWave();
+    UpdateCameraMovement();
 }
 
+const int cellSize = 50;
 void Render()
 {
     BeginDrawing();
 
     ClearBackground(RAYWHITE);
 
+    DrawText(TextFormat("Red enemies: %2i", redEnemiesRemaining), 10, 10, 30, RED);
+    DrawText(TextFormat("Blue enemies: %2i", blueEnemiesRemaining), 10, 50, 30, BLUE);
+
     BeginMode2D(camera);
+
+    DrawCircleV(entities[playerID].position, PLAYER_SAFE_RADIUS, (Color){230, 41, 55, 100});
+    DrawCircleV(entities[playerID].position, ENTITY_SPAWN_RADIUS, (Color){0, 121, 241, 100});
+
+    DrawText(TextFormat("Wave %2i", wave), 0, 0, 40, GRAY);
+
+    for (int x = -worldSize; x <= worldSize; x += cellSize)
+        DrawLine(x, -worldSize, x, worldSize, GRAY);
+
+    for (int y = -worldSize; y <= worldSize; y += cellSize)
+        DrawLine(-worldSize, y, worldSize, y, GRAY);
+
     for (EntityID i = 0; i < entitiesCount; i++)
     {
         Entity entity = entities[i];
@@ -457,9 +570,10 @@ void Render()
         Vector2 origin = (Vector2){entity.size.x / 2.0f, entity.size.y / 2.0f};
         float rotation = atan2f(entity.facing.y, entity.facing.x) * RAD2DEG;
         DrawTexturePro(texture, src, dest, origin, rotation, WHITE);
+
+        DrawLineV(entities[playerID].position, entity.position, RED);
     }
 
-    DrawText(TextFormat("Wave %2i", wave), 0, 0, 40, GRAY);
     EndMode2D();
 
     EndDrawing();
@@ -524,8 +638,6 @@ int main(int argc, char **argv)
     SpawnPlayer();
     GenerateWave();
 
-    SpawnPowerupShooting();
-    SpawnPowerupSpeed();
     LoadAllTextures();
     LoadAllSoundEffects();
     PlayMusicStream(backgroundMusic);
@@ -539,6 +651,13 @@ int main(int argc, char **argv)
             Update();
 
             Render();
+            break;
+        case PAUSED:
+            if (IsKeyPressed(KEY_P))
+                gameState = PLAYING;
+
+            RenderLostScreen();
+
             break;
         case LOST:
             RenderLostScreen();
