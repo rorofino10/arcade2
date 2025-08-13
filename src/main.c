@@ -172,6 +172,10 @@ void handleCollisionBetween(EntityID idA, EntityID idB)
     {
         KillEntity(idB);
     }
+    SetCollision(ENTITY_PLAYER, ENTITY_RED_ENEMY)
+    {
+        KillEntity(idA);
+    }
 }
 
 void HandleCollisions()
@@ -202,7 +206,7 @@ void Input()
     if (IsKeyDown(KEY_D))
         direction.x += 1;
 
-    entities[playerID].direction = direction;
+    entities[playerID].direction = Vector2Normalize(direction);
     Vector2 mousePositionWorld = GetScreenToWorld2D(GetMousePosition(), camera);
     entities[playerID].facing = Vector2Normalize(Vector2Subtract(mousePositionWorld, entities[playerID].position));
 
