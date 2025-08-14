@@ -403,18 +403,9 @@ void handleCollisionBetween(EntityID idA, EntityID idB)
 
 void HandleCollisions()
 {
-    for (EntityID idA = 0; idA < entitiesCount; idA++)
-    {
-        if (!entities[idA].isAlive)
-            continue;
-        for (EntityID idB = 0; idB < entitiesCount; idB++)
-        {
-            if (!entities[idB].isAlive)
-                continue;
-
-            handleCollisionBetween(idA, idB);
-        }
-    }
+    FOR_EACH_ALIVE_ENTITY(idA)
+    FOR_EACH_ALIVE_ENTITY(idB)
+    handleCollisionBetween(idA, idB);
 }
 
 void KillAllEntities()
