@@ -24,7 +24,7 @@ const SPEED DEFAULT_ENEMY_SPEED = 40.0f;
 const SPEED DEFAULT_BULLET_SPEED = 500.0f;
 const COOLDOWN DEFAULT_SHOOTING_COOLDOWN = 0.5f;
 const LIFETIME DEFAULT_BULLET_LIFETIME = 2.0f;
-const LIFETIME DEFAULT_POWERUP_SPEED_LIFETIME = 2.0f;
+const LIFETIME DEFAULT_POWERUP_SPEED_LIFETIME = 5.0f;
 const LIFETIME DEFAULT_POWERUP_SHOOTING_LIFETIME = 2.0f;
 const Vector2 DEFAULT_ENTITY_SIZE = (Vector2){50, 50};
 const Vector2 DEFAULT_ENTITY_FACING = (Vector2){1, 0};
@@ -60,11 +60,13 @@ const LIFETIME DEFAULT_SHAKE_DURATION = 0.5f;
 const _Float16 DEFAULT_SHAKE_INTENSITY = 5.0f;
 LIFETIME shakeLifetime = 0.0f;
 
-const LIFETIME DEFAULT_BASE_ZOOM = 1.0f;
+const _float32_t DEFAULT_BASE_ZOOM = 1.0f;
 const LIFETIME DEFAULT_ZOOM_DURATION = 2.0f;
-const _Float16 DEFAULT_ZOOM_OUT_INTENSITY = 0.5f;
-const _Float16 DEFAULT_ZOOM_IN_INTENSITY = 2.0f;
-_Float16 zoomIntensity = DEFAULT_BASE_ZOOM;
+
+const _float32_t DEFAULT_ZOOM_OUT_INTENSITY = 0.8f;
+const _float32_t DEFAULT_ZOOM_IN_INTENSITY = 1 / DEFAULT_ZOOM_OUT_INTENSITY;
+_float32_t zoomBase = DEFAULT_BASE_ZOOM;
+_float32_t zoomIntensity = DEFAULT_BASE_ZOOM;
 LIFETIME zoomLifetime = 0.0f;
 
 typedef enum GameState
@@ -75,6 +77,7 @@ typedef enum GameState
 } GameState;
 
 GameState gameState = PLAYING;
+bool debug = false;
 
 typedef enum
 {
@@ -274,13 +277,10 @@ void CheckWaveEnded()
 void ApplyPowerupSpeed(EntityID entityId, EntityID powerupId)
 {
     PlaySound(soundEffects[SOUND_EFFECT_POWERUP]);
-    entities[entityId].speed *= 2.0f;
+    entities[entityId].speed *= 3.0f;
     entities[entityId].powerupSpeedLifetime = DEFAULT_POWERUP_SPEED_LIFETIME;
     entities[entityId].isPowerupSpeedActive = true;
     entities[powerupId].isAlive = false;
-
-    zoomLifetime = DEFAULT_ZOOM_DURATION;
-    zoomIntensity = DEFAULT_ZOOM_IN_INTENSITY;
 }
 
 void ApplyPowerupShooting(EntityID entityId, EntityID powerupId)
@@ -290,9 +290,6 @@ void ApplyPowerupShooting(EntityID entityId, EntityID powerupId)
     entities[entityId].powerupShootingLifetime = DEFAULT_POWERUP_SHOOTING_LIFETIME;
     entities[entityId].isPowerupShootingActive = true;
     entities[powerupId].isAlive = false;
-
-    zoomLifetime = DEFAULT_ZOOM_DURATION;
-    zoomIntensity = DEFAULT_ZOOM_OUT_INTENSITY;
 }
 
 void handleBlueEnemyDeath(EntityID blueEnemyId)
@@ -394,10 +391,63 @@ void HandleCollisions()
     }
 }
 
+void KillAllEntities()
+{
+
+    for (EntityID entityId = 0; entityId < entitiesCount; entityId++)
+    {
+        entities[entityId].isAlive = false;
+    }
+    redEnemiesRemaining = 0;
+    blueEnemiesRemaining = 0;
+}
+
+void RestartWave()
+{
+    wave = 1;
+    blueEnemiesToSpawn = 0;
+    redEnemiesToSpawn = 0;
+}
+
+void StartGame()
+{
+    SpawnPlayer();
+    GenerateWave();
+}
+
+void RestartGame()
+{
+    StopMusicStream(backgroundMusic);
+    PlayMusicStream(backgroundMusic);
+    KillAllEntities();
+    RestartWave();
+    StartGame();
+}
+void ZoomIn()
+{
+    // zoomBase *= DEFAULT_ZOOM_IN_INTENSITY;
+    zoomBase += 0.20f;
+}
+
+void ZoomOut()
+{
+    // zoomBase *= DEFAULT_ZOOM_OUT_INTENSITY;
+    zoomBase -= 0.20f;
+}
 void Input()
 {
     if (IsKeyPressed(KEY_P))
         gameState = PAUSED;
+
+    if (IsKeyPressed(KEY_R))
+        RestartGame();
+    if (IsKeyPressed(KEY_O))
+        debug = !debug;
+
+    if (IsKeyPressed(KEY_J))
+        ZoomOut();
+    if (IsKeyPressed(KEY_K))
+        ZoomIn();
 
     Vector2 direction = {0};
     if (IsKeyDown(KEY_W))
@@ -468,12 +518,12 @@ void UpdateCameraMovement()
         if (elapsed < phaseOut)
         {
             float t = elapsed / phaseOut;
-            zoomChange = DEFAULT_BASE_ZOOM + (zoomIntensity - DEFAULT_BASE_ZOOM) * t;
+            zoomChange = zoomBase + (zoomIntensity - zoomBase) * t;
         }
         else if (elapsed > DEFAULT_ZOOM_DURATION - phaseIn)
         {
             float t = (DEFAULT_ZOOM_DURATION - elapsed) / phaseIn;
-            zoomChange = DEFAULT_BASE_ZOOM + (zoomIntensity - DEFAULT_BASE_ZOOM) * t;
+            zoomChange = zoomBase + (zoomIntensity - zoomBase) * t;
         }
         else
         {
@@ -482,7 +532,7 @@ void UpdateCameraMovement()
         camera.zoom = zoomChange;
     }
     else
-        camera.zoom = DEFAULT_BASE_ZOOM;
+        camera.zoom = zoomBase;
 }
 
 void Update()
@@ -501,7 +551,9 @@ void Update()
         switch (entities[i].type)
         {
         case ENTITY_RED_ENEMY:
-            entities[i].direction = Vector2Normalize(Vector2Subtract(entities[playerID].position, entities[i].position));
+            Vector2 distance = Vector2Normalize(Vector2Subtract(entities[playerID].position, entities[i].position));
+            entities[i].direction = distance;
+            entities[i].facing = distance;
             break;
         case ENTITY_BULLET:
             entities[i].lifetime -= GetFrameTime();
@@ -536,7 +588,28 @@ void Update()
     UpdateCameraMovement();
 }
 
-const int cellSize = 50;
+const uint32_t cellSize = 50;
+
+void RenderDebug()
+{
+
+    DrawCircleV(entities[playerID].position, PLAYER_SAFE_RADIUS, (Color){230, 41, 55, 100});
+    DrawCircleV(entities[playerID].position, ENTITY_SPAWN_RADIUS, (Color){0, 121, 241, 100});
+    for (int i = -worldSize; i <= worldSize; i += cellSize)
+        for (int j = -worldSize; j <= worldSize; j += cellSize)
+            DrawText(TextFormat("%2i,%2i", i, j), i, j, 5, GRAY);
+
+    for (EntityID i = 0; i < entitiesCount; i++)
+    {
+        Entity entity = entities[i];
+        if (!entity.isAlive)
+            continue;
+        DrawLineV(entities[playerID].position, entity.position, RED);
+        DrawLineV(entity.position, Vector2Add(entity.position, Vector2Scale(entity.direction, 50)), BLUE);
+        DrawLineV(entity.position, Vector2Add(entity.position, Vector2Scale(entity.facing, 50)), GREEN);
+    }
+}
+
 void Render()
 {
     BeginDrawing();
@@ -547,9 +620,6 @@ void Render()
     DrawText(TextFormat("Blue enemies: %2i", blueEnemiesRemaining), 10, 50, 30, BLUE);
 
     BeginMode2D(camera);
-
-    DrawCircleV(entities[playerID].position, PLAYER_SAFE_RADIUS, (Color){230, 41, 55, 100});
-    DrawCircleV(entities[playerID].position, ENTITY_SPAWN_RADIUS, (Color){0, 121, 241, 100});
 
     DrawText(TextFormat("Wave %2i", wave), 0, 0, 40, GRAY);
 
@@ -570,11 +640,13 @@ void Render()
         Vector2 origin = (Vector2){entity.size.x / 2.0f, entity.size.y / 2.0f};
         float rotation = atan2f(entity.facing.y, entity.facing.x) * RAD2DEG;
         DrawTexturePro(texture, src, dest, origin, rotation, WHITE);
-
-        DrawLineV(entities[playerID].position, entity.position, RED);
     }
 
+    if (debug)
+        RenderDebug();
     EndMode2D();
+
+    DrawText(TextFormat("%03i%%", (int)lroundf(zoomBase * 100.0f)), screenWidth - 50, screenHeight - 25, 20, BLACK);
 
     EndDrawing();
 }
@@ -635,8 +707,8 @@ int main(int argc, char **argv)
     SetTargetFPS(60);
 
     entities = calloc(entitiesCount, sizeof(Entity));
-    SpawnPlayer();
-    GenerateWave();
+
+    StartGame();
 
     LoadAllTextures();
     LoadAllSoundEffects();
