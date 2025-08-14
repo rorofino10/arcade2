@@ -55,6 +55,7 @@ COOLDOWN spawnCooldownRemaining = 0.0f;
 
 const uint16_t PLAYER_SAFE_RADIUS = 100;
 const uint16_t ENTITY_SPAWN_RADIUS = 300;
+const _float32_t NEUTRAL_SHOOT_RADIUS = 80.0f;
 
 const LIFETIME DEFAULT_SHAKE_DURATION = 0.5f;
 const _Float16 DEFAULT_SHAKE_INTENSITY = 5.0f;
@@ -81,13 +82,14 @@ bool debug = false;
 
 typedef enum
 {
-    ENTITY_PLAYER,
+    ENTITY_PLAYER = 0,
     ENTITY_RED_ENEMY,
     ENTITY_BLUE_ENEMY,
     ENTITY_BULLET,
     ENTITY_POWERUP_SPEED,
     ENTITY_POWERUP_SHOOTING,
     ENTITY_EXPLOSION,
+    ENTITY_NEUTRAL,
     // Count
     ENTITY_TYPE_COUNT
 } EntityType;
@@ -129,6 +131,12 @@ Music backgroundMusic;
 Sound soundEffects[SOUND_EFFECT_COUNT];
 
 Camera2D camera = {.offset = (Vector2){screenWidth / 2, screenHeight / 2}, .rotation = 0.0f, .zoom = DEFAULT_BASE_ZOOM};
+
+#define FOR_EACH_ALIVE_ENTITY(i)                 \
+    for (EntityID i = 0; i < entitiesCount; i++) \
+        if (!entities[i].isAlive)                \
+            continue;                            \
+        else
 
 Vector2 RandomSpawnPosition(Vector2 playerPos)
 {
@@ -186,6 +194,14 @@ EntityID SpawnRedEnemy()
     redEnemiesRemaining++;
     return enemyId;
 }
+EntityID SpawnNeutral()
+{
+    Vector2 position = RandomSpawnPosition(entities[playerID].position);
+    EntityID neutralId = SpawnEntity(position, DEFAULT_ENTITY_SIZE, 0.0f, ENTITY_NEUTRAL);
+    entities[neutralId].shootingCooldownRemaining = DEFAULT_SHOOTING_COOLDOWN;
+    entities[neutralId].shootingCooldown = DEFAULT_SHOOTING_COOLDOWN * 3;
+    return neutralId;
+}
 EntityID SpawnBlueEnemy()
 {
     Vector2 position = RandomSpawnPosition(entities[playerID].position);
@@ -231,12 +247,12 @@ void ShootBullet(EntityID from, Vector2 direction)
     entities[bulletId].direction = direction;
     entities[bulletId].facing = direction;
 }
-void PlayerShootBullet()
+void EntityShootBullet(EntityID entity)
 {
-    if (entities[playerID].shootingCooldownRemaining <= 0.0f)
+    if (entities[entity].shootingCooldownRemaining <= 0.0f)
     {
-        entities[playerID].shootingCooldownRemaining = entities[playerID].shootingCooldown;
-        ShootBullet(playerID, entities[playerID].facing);
+        entities[entity].shootingCooldownRemaining = entities[entity].shootingCooldown;
+        ShootBullet(entity, entities[entity].facing);
     }
 }
 
@@ -358,6 +374,16 @@ void handleCollisionBetween(EntityID idA, EntityID idB)
         KillEntity(idB);
         return;
     }
+    SetCollision(ENTITY_BULLET, ENTITY_NEUTRAL)
+    {
+        KillEntity(idB);
+        return;
+    }
+    SetCollision(ENTITY_BULLET, ENTITY_PLAYER)
+    {
+        KillEntity(idB);
+        return;
+    }
     SetCollision(ENTITY_PLAYER, ENTITY_RED_ENEMY)
     {
         KillEntity(idA);
@@ -412,6 +438,7 @@ void RestartWave()
 void StartGame()
 {
     SpawnPlayer();
+    SpawnNeutral();
     GenerateWave();
 }
 
@@ -463,8 +490,8 @@ void Input()
     Vector2 mousePositionWorld = GetScreenToWorld2D(GetMousePosition(), camera);
     entities[playerID].facing = Vector2Normalize(Vector2Subtract(mousePositionWorld, entities[playerID].position));
 
-    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT))
-        PlayerShootBullet();
+    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) || IsKeyDown(KEY_SPACE))
+        EntityShootBullet(playerID);
 }
 
 void UpdateWave()
@@ -539,10 +566,8 @@ void Update()
 {
     UpdateMusicStream(backgroundMusic);
 
-    for (EntityID i = 0; i < entitiesCount; i++)
+    FOR_EACH_ALIVE_ENTITY(i)
     {
-        if (!entities[i].isAlive)
-            continue;
         Vector2 newPos = Vector2Add(entities[i].position, Vector2Scale(entities[i].direction, entities[i].speed * GetFrameTime()));
         if (Vector2Distance(newPos, Vector2Zero()) <= worldSize)
             entities[i].position = newPos;
@@ -579,6 +604,22 @@ void Update()
                 entities[i].shootingCooldown = DEFAULT_SHOOTING_COOLDOWN;
             }
             break;
+        case ENTITY_NEUTRAL:
+            if (entities[i].shootingCooldownRemaining > 0.0f)
+                entities[i].shootingCooldownRemaining -= GetFrameTime();
+            FOR_EACH_ALIVE_ENTITY(target)
+            {
+                if (entities[target].type != ENTITY_RED_ENEMY)
+                    continue;
+                if (Vector2Distance(entities[i].position, entities[target].position) < NEUTRAL_SHOOT_RADIUS)
+                {
+                    Vector2 neutralFacing = Vector2Normalize(Vector2Subtract(entities[target].position, entities[i].position));
+
+                    entities[i].facing = neutralFacing;
+                    EntityShootBullet(i);
+                }
+            }
+            break;
         default:
             break;
         }
@@ -604,6 +645,15 @@ void RenderDebug()
         Entity entity = entities[i];
         if (!entity.isAlive)
             continue;
+        switch (entity.type)
+        {
+        case ENTITY_NEUTRAL:
+            DrawCircleV(entity.position, NEUTRAL_SHOOT_RADIUS, (Color){253, 249, 0, 100});
+            break;
+
+        default:
+            break;
+        }
         DrawLineV(entities[playerID].position, entity.position, RED);
         DrawLineV(entity.position, Vector2Add(entity.position, Vector2Scale(entity.direction, 50)), BLUE);
         DrawLineV(entity.position, Vector2Add(entity.position, Vector2Scale(entity.facing, 50)), GREEN);
@@ -660,6 +710,7 @@ void LoadAllTextures()
     textures[ENTITY_POWERUP_SPEED] = LoadTexture("assets/powerup_speed.png");
     textures[ENTITY_POWERUP_SHOOTING] = LoadTexture("assets/powerup_shooting.png");
     textures[ENTITY_EXPLOSION] = LoadTexture("assets/explosion.png");
+    textures[ENTITY_NEUTRAL] = LoadTexture("assets/neutral.png");
 }
 
 void UnloadAllTextures()
