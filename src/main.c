@@ -32,26 +32,63 @@ const Vector2 DEFAULT_BULLET_SIZE = (Vector2){11, 5};
 
 const uint16_t worldSize = 1000;
 
-uint8_t wave = 1;
+const SPEED DEFAULT_REDENEMIES_SPEED_INCREASE = 10;
+const EntityID DEFAULT_REDENEMIES_INCREASE = 3;
+const EntityID DEFAULT_BLUEENEMIES_INCREASE = 1;
+const COOLDOWN DEFAULT_WAVE_REFRESH_COOLDOWN = 2.0f;
+const COOLDOWN DEFAULT_SPAWN_INTERVAL = 0.5f;
 
-const SPEED redEnemiesSpeedIncrease = 10;
-SPEED redEnemiesSpeed = DEFAULT_ENEMY_SPEED;
-const EntityID redEnemiesIncrease = 3;
-EntityID redEnemiesLeftToSpawn = 0;
-EntityID redEnemiesToSpawn = 0;
-EntityID redEnemiesRemaining = 0;
+typedef struct WaveManager
+{
+    uint8_t wave;
+    bool isWaveInProgress;
+    COOLDOWN waveRefreshCooldownRemaining;
+    COOLDOWN waveRefreshCooldown;
 
-const EntityID blueEnemiesIncrease = 1;
-EntityID blueEnemiesLeftToSpawn = 0;
-EntityID blueEnemiesToSpawn = 0;
-EntityID blueEnemiesRemaining = 0;
+    // Spawn Timings
+    COOLDOWN spawnCooldown;
+    COOLDOWN spawnCooldownRemaining;
 
-const COOLDOWN waveRefreshCooldown = 2.0f;
-COOLDOWN waveRefreshCooldownRemaining = 2.0f;
-bool isWaveInProgress = false;
+    // Red Enemies
+    SPEED redEnemiesSpeedIncrease;
+    SPEED redEnemiesSpeed;
+    EntityID redEnemiesIncrease;
+    EntityID redEnemiesToSpawn;
+    EntityID redEnemiesLeftToSpawn;
+    EntityID redEnemiesRemaining;
 
-const COOLDOWN spawnCooldown = 0.5f;
-COOLDOWN spawnCooldownRemaining = 0.0f;
+    // Blue Enemies
+    EntityID blueEnemiesIncrease;
+    EntityID blueEnemiesToSpawn;
+    EntityID blueEnemiesLeftToSpawn;
+    EntityID blueEnemiesRemaining;
+
+} WaveManager;
+
+WaveManager waveManager = {
+    .wave = 1,
+    .isWaveInProgress = false,
+    .waveRefreshCooldown = DEFAULT_WAVE_REFRESH_COOLDOWN,
+    .waveRefreshCooldownRemaining = DEFAULT_WAVE_REFRESH_COOLDOWN,
+
+    // Spawn Timings
+    .spawnCooldown = DEFAULT_SPAWN_INTERVAL,
+    .spawnCooldownRemaining = 0.0f,
+
+    // Red Enemies
+    .redEnemiesIncrease = DEFAULT_REDENEMIES_INCREASE,
+    .redEnemiesSpeedIncrease = DEFAULT_REDENEMIES_SPEED_INCREASE,
+    .redEnemiesSpeed = DEFAULT_ENEMY_SPEED,
+    .redEnemiesToSpawn = 0,
+    .redEnemiesLeftToSpawn = 0,
+    .redEnemiesRemaining = 0,
+
+    // Blue Enemies
+    .blueEnemiesIncrease = DEFAULT_BLUEENEMIES_INCREASE,
+    .blueEnemiesToSpawn = 0,
+    .blueEnemiesLeftToSpawn = 0,
+    .blueEnemiesRemaining = 0,
+};
 
 const uint16_t PLAYER_SAFE_RADIUS = 100;
 const uint16_t ENTITY_SPAWN_RADIUS = 300;
@@ -188,10 +225,10 @@ EntityID SpawnPlayer()
 EntityID SpawnRedEnemy()
 {
     Vector2 position = RandomSpawnPosition(entities[playerID].position);
-    EntityID enemyId = SpawnEntity(position, DEFAULT_ENTITY_SIZE, redEnemiesSpeed, ENTITY_RED_ENEMY);
-    spawnCooldownRemaining = spawnCooldown;
-    redEnemiesLeftToSpawn--;
-    redEnemiesRemaining++;
+    EntityID enemyId = SpawnEntity(position, DEFAULT_ENTITY_SIZE, waveManager.redEnemiesSpeed, ENTITY_RED_ENEMY);
+    waveManager.spawnCooldownRemaining = waveManager.spawnCooldown;
+    waveManager.redEnemiesLeftToSpawn--;
+    waveManager.redEnemiesRemaining++;
     return enemyId;
 }
 EntityID SpawnNeutral()
@@ -206,9 +243,9 @@ EntityID SpawnBlueEnemy()
 {
     Vector2 position = RandomSpawnPosition(entities[playerID].position);
     EntityID enemyId = SpawnEntity(position, DEFAULT_ENTITY_SIZE, 0.0f, ENTITY_BLUE_ENEMY);
-    spawnCooldownRemaining = spawnCooldown;
-    blueEnemiesLeftToSpawn--;
-    blueEnemiesRemaining++;
+    waveManager.spawnCooldownRemaining = waveManager.spawnCooldown;
+    waveManager.blueEnemiesLeftToSpawn--;
+    waveManager.blueEnemiesRemaining++;
     return enemyId;
 }
 EntityID SpawnPowerupSpeed()
@@ -270,23 +307,23 @@ void GenerateWave()
 {
     SpawnPowerupShooting();
     SpawnPowerupSpeed();
-    isWaveInProgress = true;
-    waveRefreshCooldownRemaining = waveRefreshCooldown;
+    waveManager.isWaveInProgress = true;
+    waveManager.waveRefreshCooldownRemaining = waveManager.waveRefreshCooldown;
 
-    redEnemiesToSpawn += redEnemiesIncrease;
-    redEnemiesLeftToSpawn = redEnemiesToSpawn;
-    redEnemiesSpeed += redEnemiesSpeedIncrease;
+    waveManager.redEnemiesToSpawn += waveManager.redEnemiesIncrease;
+    waveManager.redEnemiesLeftToSpawn = waveManager.redEnemiesToSpawn;
+    waveManager.redEnemiesSpeed += waveManager.redEnemiesSpeedIncrease;
 
-    blueEnemiesToSpawn += blueEnemiesIncrease;
-    blueEnemiesLeftToSpawn = blueEnemiesToSpawn;
+    waveManager.blueEnemiesToSpawn += waveManager.blueEnemiesIncrease;
+    waveManager.blueEnemiesLeftToSpawn = waveManager.blueEnemiesToSpawn;
 }
 
 void CheckWaveEnded()
 {
-    if (redEnemiesRemaining == 0 && blueEnemiesRemaining == 0)
+    if (waveManager.redEnemiesRemaining == 0 && waveManager.blueEnemiesRemaining == 0)
     {
-        wave++;
-        isWaveInProgress = false;
+        waveManager.wave++;
+        waveManager.isWaveInProgress = false;
     }
 }
 
@@ -318,11 +355,11 @@ void handleBlueEnemyDeath(EntityID blueEnemyId)
 
         ShootBullet(blueEnemyId, dir);
     }
-    blueEnemiesRemaining--;
+    waveManager.blueEnemiesRemaining--;
 }
 void handleRedEnemyDeath(EntityID entityId)
 {
-    redEnemiesRemaining--;
+    waveManager.redEnemiesRemaining--;
 }
 
 void handlePlayerDeath(EntityID playerId)
@@ -338,20 +375,22 @@ void KillEntity(EntityID entityId)
     {
     case ENTITY_BLUE_ENEMY:
         handleBlueEnemyDeath(entityId);
+        CheckWaveEnded();
         break;
 
     case ENTITY_RED_ENEMY:
         handleRedEnemyDeath(entityId);
+        CheckWaveEnded();
         break;
     case ENTITY_PLAYER:
         handlePlayerDeath(entityId);
+        break;
     default:
         break;
     }
     EntityID explosionId = SpawnExplosion();
     entities[explosionId].position = entities[entityId].position;
     entities[entityId].isAlive = false;
-    CheckWaveEnded();
 }
 
 #define SetCollision(entityA, entityB) if ((entities[idA].type == entityA && entities[idB].type == entityB))
@@ -415,15 +454,15 @@ void KillAllEntities()
     {
         entities[entityId].isAlive = false;
     }
-    redEnemiesRemaining = 0;
-    blueEnemiesRemaining = 0;
+    waveManager.redEnemiesRemaining = 0;
+    waveManager.blueEnemiesRemaining = 0;
 }
 
 void RestartWave()
 {
-    wave = 1;
-    blueEnemiesToSpawn = 0;
-    redEnemiesToSpawn = 0;
+    waveManager.wave = 1;
+    waveManager.blueEnemiesToSpawn = 0;
+    waveManager.redEnemiesToSpawn = 0;
 }
 
 void StartGame()
@@ -487,21 +526,21 @@ void Input()
 
 void UpdateWave()
 {
-    if (!isWaveInProgress && waveRefreshCooldownRemaining > 0.0f)
-        waveRefreshCooldownRemaining -= GetFrameTime();
-    if (!isWaveInProgress && waveRefreshCooldownRemaining <= 0.0f)
+    if (!waveManager.isWaveInProgress && waveManager.waveRefreshCooldownRemaining > 0.0f)
+        waveManager.waveRefreshCooldownRemaining -= GetFrameTime();
+    if (!waveManager.isWaveInProgress && waveManager.waveRefreshCooldownRemaining <= 0.0f)
         GenerateWave();
-    if (isWaveInProgress)
+    if (waveManager.isWaveInProgress)
     {
-        if (redEnemiesLeftToSpawn != 0 || blueEnemiesLeftToSpawn != 0)
+        if (waveManager.redEnemiesLeftToSpawn != 0 || waveManager.blueEnemiesLeftToSpawn != 0)
         {
-            if (spawnCooldownRemaining > 0.0f)
-                spawnCooldownRemaining -= GetFrameTime();
-            if (spawnCooldownRemaining <= 0.0f && redEnemiesLeftToSpawn != 0)
+            if (waveManager.spawnCooldownRemaining > 0.0f)
+                waveManager.spawnCooldownRemaining -= GetFrameTime();
+            if (waveManager.spawnCooldownRemaining <= 0.0f && waveManager.redEnemiesLeftToSpawn != 0)
             {
                 SpawnRedEnemy();
             }
-            if (spawnCooldownRemaining <= 0.0f && blueEnemiesLeftToSpawn != 0)
+            if (waveManager.spawnCooldownRemaining <= 0.0f && waveManager.blueEnemiesLeftToSpawn != 0)
             {
                 SpawnBlueEnemy();
             }
@@ -657,12 +696,12 @@ void Render()
 
     ClearBackground(RAYWHITE);
 
-    DrawText(TextFormat("Red enemies: %2i", redEnemiesRemaining), 10, 10, 30, RED);
-    DrawText(TextFormat("Blue enemies: %2i", blueEnemiesRemaining), 10, 50, 30, BLUE);
+    DrawText(TextFormat("Red enemies: %2i", waveManager.redEnemiesRemaining), 10, 10, 30, RED);
+    DrawText(TextFormat("Blue enemies: %2i", waveManager.blueEnemiesRemaining), 10, 50, 30, BLUE);
 
     BeginMode2D(camera);
 
-    DrawText(TextFormat("Wave %2i", wave), 0, 0, 40, GRAY);
+    DrawText(TextFormat("Wave %2i", waveManager.wave), 0, 0, 40, GRAY);
 
     for (int x = -worldSize; x <= worldSize; x += cellSize)
         DrawLine(x, -worldSize, x, worldSize, GRAY);
@@ -738,7 +777,7 @@ void RenderLostScreen()
 
     Vector2 titlePos = (Vector2){screenWidth / 2, 20};
     DrawText("YOU LOST", titlePos.x, titlePos.y, 50, WHITE);
-    DrawText(TextFormat("Reached wave %02i", wave), titlePos.x, titlePos.y + 70, 30, GRAY);
+    DrawText(TextFormat("Reached wave %02i", waveManager.wave), titlePos.x, titlePos.y + 70, 30, GRAY);
     EndDrawing();
 }
 
