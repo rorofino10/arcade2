@@ -1,10 +1,12 @@
 #include "raylib.h"
 #include "raymath.h"
 
-#include "stdio.h"
-#include "stdlib.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
 
-#include "stdint.h"
+#include "game.h"
+#include "network.h"
 
 typedef uint8_t EntityID;
 typedef float _float32_t;
@@ -37,6 +39,10 @@ const EntityID DEFAULT_REDENEMIES_INCREASE = 3;
 const EntityID DEFAULT_BLUEENEMIES_INCREASE = 1;
 const COOLDOWN DEFAULT_WAVE_REFRESH_COOLDOWN = 2.0f;
 const COOLDOWN DEFAULT_SPAWN_INTERVAL = 0.5f;
+
+const double NetworkTPS = 30.0f;
+const double timeBetweenNetworkTicks = 1.0 / NetworkTPS;
+double elapsedTimeBetweenNetworkTicks = 0.0f;
 
 typedef struct WaveManager
 {
@@ -491,7 +497,10 @@ void ZoomOut()
     // zoomBase *= DEFAULT_ZOOM_OUT_INTENSITY;
     zoomBase -= 0.20f;
 }
-void Input()
+
+Vector2 prevDirectionInput = {0};
+
+void Input(struct Client *client)
 {
     if (IsKeyPressed(KEY_P))
         gameState = PAUSED;
@@ -516,6 +525,12 @@ void Input()
     if (IsKeyDown(KEY_D))
         direction.x += 1;
 
+    if (direction.x != prevDirectionInput.x || direction.y != prevDirectionInput.y)
+        if (elapsedTimeBetweenNetworkTicks >= timeBetweenNetworkTicks)
+        {
+            NetworkSendMoveMessage(client, direction.x, direction.y);
+        }
+    prevDirectionInput = direction;
     entities[playerID].direction = Vector2Normalize(direction);
     Vector2 mousePositionWorld = GetScreenToWorld2D(GetMousePosition(), camera);
     entities[playerID].facing = Vector2Normalize(Vector2Subtract(mousePositionWorld, entities[playerID].position));
@@ -590,6 +605,14 @@ void UpdateCameraMovement()
     }
     else
         camera.zoom = zoomBase;
+}
+
+void UpdateNetwork()
+{
+    while (elapsedTimeBetweenNetworkTicks >= timeBetweenNetworkTicks)
+    {
+        elapsedTimeBetweenNetworkTicks -= timeBetweenNetworkTicks;
+    }
 }
 
 void Update()
@@ -780,10 +803,8 @@ void RenderLostScreen()
     EndDrawing();
 }
 
-int main(int argc, char **argv)
+void GameRun(struct Client *client)
 {
-    printf("sizeof(Entity)=%d:\n", sizeof(Entity));
-    printf("sizeof(WaveManager)=%d:\n", sizeof(WaveManager));
     InitWindow(screenWidth, screenHeight, gameTitle);
     InitAudioDevice();
     SetTargetFPS(60);
@@ -795,12 +816,21 @@ int main(int argc, char **argv)
     LoadAllTextures();
     LoadAllSoundEffects();
     PlayMusicStream(backgroundMusic);
+
+    double prevTime = GetTime();
+
     while (!WindowShouldClose())
     {
+        double currentTime = GetTime();
+        double deltaTime = currentTime - prevTime;
+        prevTime = currentTime;
+
+        elapsedTimeBetweenNetworkTicks += deltaTime;
+
         switch (gameState)
         {
         case PLAYING:
-            Input();
+            Input(client);
 
             Update();
 
@@ -827,5 +857,4 @@ int main(int argc, char **argv)
     CloseAudioDevice();
     CloseWindow();
     free(entities);
-    return 0;
 }
