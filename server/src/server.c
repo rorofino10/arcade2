@@ -9,30 +9,21 @@
 
 #include "game.h"
 #include "packet.h"
+#include "server.h"
+#include "network.h"
 
 #pragma comment(lib, "Ws2_32.lib")
-
-#define DEFAULT_BUFLEN 1024
-#define DEFAULT_PORT "2112"
-#define MAX_CLIENTS 2
 
 const double TPS = 60.0f;
 const double timeBetweenTicks = 1.0 / TPS;
 double elapsedTimeBetweenTicks = 0.0f;
-const double NetworkTPS = 20.0f;
+const double NetworkTPS = 10.0f;
 const double timeBetweenNetworkTicks = 1.0 / NetworkTPS;
 double elapsedTimeBetweenNetworkTicks = 0.0f;
 
-typedef struct
-{
-    SOCKET listenSocket;
-    SOCKET clients[MAX_CLIENTS];
-    WSAPOLLFD fds[1 + MAX_CLIENTS];
-    int nfds;
-} Server;
-
 void ServerTryTick()
 {
+
     while (elapsedTimeBetweenTicks >= timeBetweenTicks)
     {
         GameUpdate(timeBetweenTicks);
@@ -40,11 +31,13 @@ void ServerTryTick()
     }
 }
 
-void ServerTryNetworkTick()
+void ServerTryNetworkTick(Server *server)
 {
+
     while (elapsedTimeBetweenNetworkTicks >= timeBetweenNetworkTicks)
     {
         elapsedTimeBetweenNetworkTicks -= timeBetweenNetworkTicks;
+        NetworkSendEntities(server);
     }
 }
 
@@ -254,7 +247,7 @@ void ServerRun(Server *server)
 
         int iResult;
 
-        iResult = WSAPoll(server->fds, server->nfds, -1);
+        iResult = WSAPoll(server->fds, server->nfds, 0);
         if (iResult == SOCKET_ERROR)
         {
             printf("WSAPoll failed: %d\n", WSAGetLastError());
@@ -276,7 +269,7 @@ void ServerRun(Server *server)
             }
         }
 
-        ServerTryNetworkTick();
+        ServerTryNetworkTick(server);
         ServerTryTick();
     }
 }

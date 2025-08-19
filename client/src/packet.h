@@ -7,6 +7,7 @@
 typedef enum
 {
     PACKET_INPUT_EVENT,
+    PACKET_ENTITY_SNAPSHOT,
 } PACKET_TYPE;
 
 typedef struct
@@ -37,5 +38,18 @@ typedef struct
     uint8_t type;
     uint16_t size;
 } ClientEventHeader;
+
+typedef struct
+{
+    uint8_t type;
+    uint16_t size;
+} ServerPacketHeader;
+
+typedef struct
+{
+    uint8_t id;
+    int16_t x, y;
+    float vx, vy;
+} ServerEntityState;
 
 #endif

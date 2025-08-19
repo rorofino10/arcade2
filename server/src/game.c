@@ -6,6 +6,7 @@
 #include "stdint.h"
 
 #include "game.h"
+#include "network.h"
 
 typedef uint8_t EntityID;
 typedef float _float32_t;
@@ -114,6 +115,7 @@ typedef enum
 
 typedef struct
 {
+    EntityID id;
     Vector2 position;
     Vector2 direction;
     Vector2 facing;
@@ -129,6 +131,7 @@ typedef struct
     bool isAlive;
     bool isPowerupSpeedActive;
     bool isPowerupShootingActive;
+    bool dirty;
 } Entity;
 
 const EntityID entitiesCount = UINT8_MAX - 1;
@@ -163,6 +166,7 @@ EntityID SpawnEntity(Vector2 position, Vector2 size, SPEED speed, EntityType typ
             continue;
 
         entities[id] = (Entity){
+            .id = id,
             .position = position,
             .direction = Vector2Zero(),
             .facing = DEFAULT_ENTITY_FACING,
@@ -172,6 +176,7 @@ EntityID SpawnEntity(Vector2 position, Vector2 size, SPEED speed, EntityType typ
             .parent = id,
             .isAlive = true,
             .lifetime = 1.0f,
+            .dirty = true,
         };
         return id;
     }
@@ -451,6 +456,22 @@ void RestartGame()
     StartGame();
 }
 
+void UpdateNetworkEntities()
+{
+    int entitiesAmountToSend = 0;
+    NetworkEntity entitiesToSend[entitiesCount];
+    FOR_EACH_ALIVE_ENTITY(id)
+    {
+        entitiesToSend[entitiesAmountToSend].id = entities[id].id;
+        entitiesToSend[entitiesAmountToSend].x = entities[id].position.x;
+        entitiesToSend[entitiesAmountToSend].y = entities[id].position.y;
+        entitiesToSend[entitiesAmountToSend].dx = entities[id].direction.x;
+        entitiesToSend[entitiesAmountToSend].dy = entities[id].direction.y;
+        entitiesAmountToSend++;
+    }
+    NetworkSetEntities(entitiesToSend, entitiesAmountToSend);
+}
+
 void UpdatePlayerPosition(int clientIndex, int16_t nx, int16_t ny)
 {
     entities[playerID].position = (Vector2){.x = (float)nx, .y = (float)ny};
@@ -541,6 +562,7 @@ void GameUpdate(double delta)
     }
     HandleCollisions();
     UpdateWave(delta);
+    UpdateNetworkEntities();
 }
 
 void GameInit()

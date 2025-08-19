@@ -14,6 +14,42 @@ size_t offset = 0;
 
 void NetworkPrepareBuffer() { offset = 0; }
 
+void NetworkRecievePacket(Client *client)
+{
+    ServerPacketHeader header;
+    int recvlen;
+    recvlen = recv(client->socket, (char *)&header, sizeof(header), 0);
+    if (recvlen <= 0)
+        return; // disconnect or error
+
+    char buffer[MAX_PACKET_SIZE];
+    recvlen = recv(client->socket, buffer, header.size, 0);
+    if (recvlen <= 0)
+        return;
+
+    switch (header.type)
+    {
+    case PACKET_ENTITY_SNAPSHOT:
+    {
+        ServerEntityState *entitiesPacket = (ServerEntityState *)buffer;
+        int count = header.size / sizeof(ServerEntityState);
+        printf("Received %d entities from server\n", count);
+
+        for (int i = 0; i < count; i++)
+        {
+            ServerEntityState *e = &entitiesPacket[i];
+            printf("Entity %d: id=%d, x=%d, y=%d\n",
+                   i, e->id, e->x, e->y);
+        }
+    }
+    break;
+
+    default:
+        printf("Unknown packet type %d\n", header.type);
+        break;
+    }
+}
+
 void NetworkSendPacket(Client *client)
 {
     ClientPacketHeader header;

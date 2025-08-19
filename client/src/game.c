@@ -615,6 +615,7 @@ void UpdateNetwork(struct Client *client)
         NetworkPushInputEvent(PACKET_INPUT_MOVE, &mh, sizeof(mh));
         NetworkSendPacket(client);
         NetworkPrepareBuffer();
+        NetworkRecievePacket(client);
     }
 }
 
