@@ -257,6 +257,15 @@ void EntityShootBullet(EntityID entity)
     }
 }
 
+void ShootBulletInput(int clientIndex, float dx, float dy)
+{
+    if (entities[playerID].shootingCooldownRemaining <= 0.0f)
+    {
+        entities[playerID].shootingCooldownRemaining = entities[playerID].shootingCooldown;
+        ShootBullet(playerID, (Vector2){dx, dy});
+    }
+}
+
 Rectangle MakeRectangleFromCenter(Vector2 center, Vector2 size)
 {
     Rectangle rect;
@@ -440,6 +449,11 @@ void RestartGame()
     KillAllEntities();
     RestartWave();
     StartGame();
+}
+
+void UpdatePlayerPosition(int clientIndex, int16_t nx, int16_t ny)
+{
+    entities[playerID].position = (Vector2){.x = (float)nx, .y = (float)ny};
 }
 
 void UpdateWave(double delta)

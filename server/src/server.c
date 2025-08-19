@@ -5,6 +5,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
 
 #include "game.h"
 #include "packet.h"
@@ -183,7 +184,7 @@ void ServerHandleClient(Server *server, int fdsIndex)
         }
         else
         {
-            printf("Client[%d] disconnected (error %d)\n", fdsIndex, err);
+            printf("Client[%d] disconnected (error %d)\n", fdsIndex - 1, err);
             closesocket(s);
             server->clients[fdsIndex - 1] = INVALID_SOCKET;
             server->fds[fdsIndex] = server->fds[server->nfds - 1];
@@ -209,12 +210,14 @@ void ServerHandleClient(Server *server, int fdsIndex)
         case PACKET_INPUT_MOVE:
         {
             PacketMoveEvent *move = (PacketMoveEvent *)edata;
+            UpdatePlayerPosition(fdsIndex - 1, move->nx, move->ny);
             printf("Move nx=%d ny=%d\n", move->nx, move->ny);
         }
         break;
         case PACKET_INPUT_SHOOT:
         {
             PacketShootEvent *shoot = (PacketShootEvent *)edata;
+            ShootBulletInput(fdsIndex - 1, shoot->dx, shoot->dy);
             printf("Shoot direction= .x=%f, .y=%f\n", shoot->dx, shoot->dy);
         }
         break;
