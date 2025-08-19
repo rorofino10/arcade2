@@ -83,7 +83,9 @@ void ClientRun(Client *client)
 void ClientClose(Client *client)
 {
     shutdown(client->socket, SD_BOTH);
+    printf("[Client]: Shutdown client socket\n");
     closesocket(client->socket);
+    printf("[Client]: Close client socket\n");
     WSACleanup();
 }
 

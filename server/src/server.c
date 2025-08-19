@@ -157,25 +157,68 @@ void ServerBroadcast(Server *server, char *buf, int len)
 
 void ServerHandleClient(Server *server, int fdsIndex)
 {
-    int packetSize = sizeof(ClientPacket);
-    ClientPacket packet;
+    ClientPacketHeader header;
     SOCKET s = server->fds[fdsIndex].fd;
-
-    int recvlen = recv(s, &packet, packetSize, 0);
+    int recvlen;
+    recvlen = recv(s, (char *)&header, sizeof(header), 0);
     if (recvlen > 0)
     {
-        // buf[recvlen] = '\0';
-        // printf("Client[%d] says: %s\n", fdsIndex, buf);
-        printf("Client[%d] sent packet: type: %d, x: %d, y: %d\n", fdsIndex, packet.header.type, packet.data.x, packet.data.y);
-        // ServerBroadcast(server, buf, recvlen);
+        printf("Client[%d] sent packet: type: %d, size: %d\n", fdsIndex, header.type, header.size);
+    }
+    else if (recvlen == 0)
+    {
+        printf("Client[%d] disconnected (graceful)\n", fdsIndex);
+        closesocket(s);
+        server->clients[fdsIndex - 1] = INVALID_SOCKET;
+        server->fds[fdsIndex] = server->fds[server->nfds - 1];
+        server->nfds--;
+        return;
     }
     else
     {
-        printf("Client[%d] disconnected\n", fdsIndex);
-        closesocket(s);
-        server->clients[fdsIndex - 1] = INVALID_SOCKET;        // fdsIndex is clientIndex+1, just set as invalid in clients
-        server->fds[fdsIndex] = server->fds[server->nfds - 1]; // Swap last with the disconnected one
-        server->nfds--;
+        int err = WSAGetLastError();
+        if (err == WSAEWOULDBLOCK)
+        {
+            return;
+        }
+        else
+        {
+            printf("Client[%d] disconnected (error %d)\n", fdsIndex, err);
+            closesocket(s);
+            server->clients[fdsIndex - 1] = INVALID_SOCKET;
+            server->fds[fdsIndex] = server->fds[server->nfds - 1];
+            server->nfds--;
+            return;
+        }
+    }
+    char buffer[MAX_PACKET_SIZE];
+    if (header.size > sizeof(buffer)) // sent is bigger than MAX_PACKET_SIZE
+        return;
+    recvlen = recv(s, buffer, header.size, 0);
+    size_t offset = 0;
+    while (offset < header.size)
+    {
+        ClientEventHeader *eheader = (ClientEventHeader *)(buffer + offset);
+        offset += sizeof(ClientEventHeader);
+
+        char *edata = buffer + offset;
+        offset += eheader->size;
+
+        switch (eheader->type)
+        {
+        case PACKET_INPUT_MOVE:
+        {
+            PacketMoveEvent *move = (PacketMoveEvent *)edata;
+            printf("Move nx=%d ny=%d\n", move->nx, move->ny);
+        }
+        break;
+        case PACKET_INPUT_SHOOT:
+        {
+            PacketShootEvent *shoot = (PacketShootEvent *)edata;
+            printf("Shoot direction= .x=%f, .y=%f\n", shoot->dx, shoot->dy);
+        }
+        break;
+        }
     }
 }
 
@@ -208,7 +251,7 @@ void ServerRun(Server *server)
 
         int iResult;
 
-        iResult = WSAPoll(server->fds, server->nfds, 0);
+        iResult = WSAPoll(server->fds, server->nfds, -1);
         if (iResult == SOCKET_ERROR)
         {
             printf("WSAPoll failed: %d\n", WSAGetLastError());
@@ -222,9 +265,11 @@ void ServerRun(Server *server)
 
         for (int i = 1; i < server->nfds; i++)
         {
-            if (server->fds[i].revents & POLLRDNORM)
+
+            if (server->fds[i].revents & (POLLRDNORM | POLLERR | POLLHUP))
             {
                 ServerHandleClient(server, i);
+                continue;
             }
         }
 

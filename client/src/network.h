@@ -2,7 +2,7 @@
 #define NETWORK_H
 
 #include <stdint.h>
-
+#include "packet.h"
 struct Client;
 
 typedef enum
@@ -19,6 +19,7 @@ typedef union
     } direction;
 } MessageData;
 
-void NetworkSendMoveMessage(struct Client *client, int8_t x, int8_t y);
-
+void NetworkPrepareBuffer();
+void NetworkSendPacket(struct Client *client);
+int NetworkPushInputEvent(PACKET_INPUT_EVENT_TYPE type, void *data, uint16_t size);
 #endif

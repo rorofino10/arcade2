@@ -9,24 +9,59 @@
 #include "network.h"
 #include "packet.h"
 
-void NetworkSendPacket(Client *client, const ClientPacket *packet)
+char buffer[MAX_PACKET_SIZE];
+size_t offset = 0;
+
+void NetworkPrepareBuffer() { offset = 0; }
+
+void NetworkSendPacket(Client *client)
 {
-    int sent = send(client->socket, (const char *)packet, sizeof(ClientPacket), 0);
+    ClientPacketHeader header;
+    header.type = PACKET_INPUT_EVENT;
+    header.size = offset;
+
+    int sent;
+    sent = send(client->socket, (char *)&header, sizeof(header), 0);
     if (sent == SOCKET_ERROR)
     {
-        printf("send failed: %d\n", WSAGetLastError());
+        printf("Header send failed: %d\n", WSAGetLastError());
+        return;
     }
-    else if (sent != sizeof(ClientPacket))
+    else if (sent != sizeof(ClientPacketHeader))
     {
-        printf("Warning: not all bytes sent (%d/%d)\n", sent, sizeof(ClientPacket));
+        printf("Warning: not all bytes sent (%d/%d)\n", sent, sizeof(ClientPacketHeader));
+        return;
     }
+    // printf("Sent PacketHeader, type: %d, size: %d\n", header.type, sizeof(ClientPacketHeader));
+
+    sent = send(client->socket, buffer, header.size, 0);
+    if (sent == SOCKET_ERROR)
+    {
+        printf("Buffer send failed: %d\n", WSAGetLastError());
+    }
+    else if (sent != header.size)
+    {
+        printf("Warning: not all bytes sent (%d/%d)\n", sent, header.size);
+    }
+    // printf("Sent Buffer, size: %d\n", header.size);
 }
 
-void NetworkSendMoveMessage(Client *client, int8_t x, int8_t y)
+int NetworkPushInputEvent(PACKET_INPUT_EVENT_TYPE type, void *data, uint16_t size)
 {
-    ClientPacket packet;
-    packet.header.type = 1;
-    packet.data.x = x;
-    packet.data.y = y;
-    NetworkSendPacket(client, &packet);
+    const size_t capacity = MAX_PACKET_SIZE - sizeof(ClientPacketHeader);
+    const size_t need = sizeof(ClientEventHeader) + (size_t)size;
+
+    if (need > capacity || offset + need > capacity)
+        return 1;
+
+    ClientEventHeader header;
+    header.type = type;
+    header.size = size;
+
+    memcpy(buffer + offset, &header, sizeof(header));
+    offset += sizeof(header);
+
+    memcpy(buffer + offset, data, size);
+    offset += size;
+    return 0;
 }

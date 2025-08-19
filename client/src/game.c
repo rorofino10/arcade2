@@ -7,6 +7,7 @@
 
 #include "game.h"
 #include "network.h"
+#include "packet.h"
 
 typedef uint8_t EntityID;
 typedef float _float32_t;
@@ -40,7 +41,7 @@ const EntityID DEFAULT_BLUEENEMIES_INCREASE = 1;
 const COOLDOWN DEFAULT_WAVE_REFRESH_COOLDOWN = 2.0f;
 const COOLDOWN DEFAULT_SPAWN_INTERVAL = 0.5f;
 
-const double NetworkTPS = 30.0f;
+const double NetworkTPS = 10.0f;
 const double timeBetweenNetworkTicks = 1.0 / NetworkTPS;
 double elapsedTimeBetweenNetworkTicks = 0.0f;
 
@@ -294,8 +295,10 @@ void EntityShootBullet(EntityID entity)
 {
     if (entities[entity].shootingCooldownRemaining <= 0.0f)
     {
+        PacketShootEvent sh = {.dx = entities[entity].facing.x, .dy = entities[entity].facing.y};
         entities[entity].shootingCooldownRemaining = entities[entity].shootingCooldown;
         ShootBullet(entity, entities[entity].facing);
+        NetworkPushInputEvent(PACKET_INPUT_SHOOT, &sh, sizeof(sh));
     }
 }
 
@@ -525,11 +528,6 @@ void Input(struct Client *client)
     if (IsKeyDown(KEY_D))
         direction.x += 1;
 
-    if (direction.x != prevDirectionInput.x || direction.y != prevDirectionInput.y)
-        if (elapsedTimeBetweenNetworkTicks >= timeBetweenNetworkTicks)
-        {
-            NetworkSendMoveMessage(client, direction.x, direction.y);
-        }
     prevDirectionInput = direction;
     entities[playerID].direction = Vector2Normalize(direction);
     Vector2 mousePositionWorld = GetScreenToWorld2D(GetMousePosition(), camera);
@@ -607,15 +605,20 @@ void UpdateCameraMovement()
         camera.zoom = zoomBase;
 }
 
-void UpdateNetwork()
+void UpdateNetwork(struct Client *client)
 {
     while (elapsedTimeBetweenNetworkTicks >= timeBetweenNetworkTicks)
     {
         elapsedTimeBetweenNetworkTicks -= timeBetweenNetworkTicks;
+        PacketMoveEvent mh = {.nx = (int16_t)entities[playerID].position.x, .ny = (int16_t)entities[playerID].position.y};
+        printf("Position x: %d, y:%d\n", (int16_t)entities[playerID].position.x, (int16_t)entities[playerID].position.y);
+        NetworkPushInputEvent(PACKET_INPUT_MOVE, &mh, sizeof(mh));
+        NetworkSendPacket(client);
+        NetworkPrepareBuffer();
     }
 }
 
-void Update()
+void Update(struct Client *client)
 {
     UpdateMusicStream(backgroundMusic);
 
@@ -680,6 +683,7 @@ void Update()
     HandleCollisions();
     UpdateWave();
     UpdateCameraMovement();
+    UpdateNetwork(client);
 }
 
 const uint32_t cellSize = 50;
@@ -832,7 +836,7 @@ void GameRun(struct Client *client)
         case PLAYING:
             Input(client);
 
-            Update();
+            Update(client);
 
             Render();
             break;
