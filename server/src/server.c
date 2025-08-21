@@ -17,9 +17,14 @@
 const double TPS = 60.0f;
 const double timeBetweenTicks = 1.0 / TPS;
 double elapsedTimeBetweenTicks = 0.0f;
-const double NetworkTPS = 10.0f;
-const double timeBetweenNetworkTicks = 1.0 / NetworkTPS;
-double elapsedTimeBetweenNetworkTicks = 0.0f;
+
+const double SnapshotTPS = 10.0f;
+const double timeBetweenSnapshotTicks = 1.0 / SnapshotTPS;
+double elapsedTimeBetweenSnapshotTicks = 0.0f;
+
+const double EventTPS = 30.0f;
+const double timeBetweenEventTicks = 1.0 / EventTPS;
+double elapsedTimeBetweenEventTicks = 0.0f;
 
 void ServerTryTick()
 {
@@ -31,13 +36,25 @@ void ServerTryTick()
     }
 }
 
-void ServerTryNetworkTick(Server *server)
+void ServerTrySnapshotTick(Server *server)
 {
 
-    while (elapsedTimeBetweenNetworkTicks >= timeBetweenNetworkTicks)
+    while (elapsedTimeBetweenSnapshotTicks >= timeBetweenSnapshotTicks)
     {
-        elapsedTimeBetweenNetworkTicks -= timeBetweenNetworkTicks;
-        NetworkSendEntities(server);
+        elapsedTimeBetweenSnapshotTicks -= timeBetweenSnapshotTicks;
+        NetworkSendEntitiesSnapshot(server);
+        NetworkSendWaveSnapshot(server);
+    }
+}
+
+void ServerTryEventTick(Server *server)
+{
+
+    while (elapsedTimeBetweenEventTicks >= timeBetweenEventTicks)
+    {
+        elapsedTimeBetweenEventTicks -= timeBetweenEventTicks;
+        NetworkSendEventPacket(server);
+        NetworkPrepareEventBuffer();
     }
 }
 
@@ -125,11 +142,16 @@ void ServerTryAcceptConnection(Server *server)
     {
         if (server->clients[i] == INVALID_SOCKET)
         {
+            u_long mode = 1;
+            ioctlsocket(newClientSocket, FIONBIO, &mode);
             server->clients[i] = newClientSocket;
             server->fds[server->nfds].fd = newClientSocket;
             server->fds[server->nfds].events = POLLRDNORM;
             server->nfds++;
             printf("New client connected: %d\n", i);
+            uint8_t playerID = GameAssignPlayerToClient(i);
+            NetworkSendAssignedPlayerID(server, i, playerID);
+
             return;
         }
     }
@@ -157,11 +179,11 @@ void ServerHandleClient(Server *server, int fdsIndex)
     recvlen = recv(s, (char *)&header, sizeof(header), 0);
     if (recvlen > 0)
     {
-        printf("Client[%d] sent packet: type: %d, size: %d\n", fdsIndex, header.type, header.size);
+        printf("Client[%d] sent packet: type: %d, size: %d\n", fdsIndex - 1, header.type, header.size);
     }
     else if (recvlen == 0)
     {
-        printf("Client[%d] disconnected (graceful)\n", fdsIndex);
+        printf("Client[%d] disconnected\n", fdsIndex - 1);
         closesocket(s);
         server->clients[fdsIndex - 1] = INVALID_SOCKET;
         server->fds[fdsIndex] = server->fds[server->nfds - 1];
@@ -177,7 +199,7 @@ void ServerHandleClient(Server *server, int fdsIndex)
         }
         else
         {
-            printf("Client[%d] disconnected (error %d)\n", fdsIndex - 1, err);
+            printf("Client[%d] disconnected, error %d\n", fdsIndex - 1, err);
             closesocket(s);
             server->clients[fdsIndex - 1] = INVALID_SOCKET;
             server->fds[fdsIndex] = server->fds[server->nfds - 1];
@@ -201,19 +223,17 @@ void ServerHandleClient(Server *server, int fdsIndex)
         switch (eheader->type)
         {
         case PACKET_INPUT_MOVE:
-        {
             PacketMoveEvent *move = (PacketMoveEvent *)edata;
             UpdatePlayerPosition(fdsIndex - 1, move->nx, move->ny);
             printf("Move nx=%d ny=%d\n", move->nx, move->ny);
-        }
-        break;
+            break;
         case PACKET_INPUT_SHOOT:
-        {
             PacketShootEvent *shoot = (PacketShootEvent *)edata;
             ShootBulletInput(fdsIndex - 1, shoot->dx, shoot->dy);
             printf("Shoot direction= .x=%f, .y=%f\n", shoot->dx, shoot->dy);
-        }
-        break;
+            break;
+        default:
+            break;
         }
     }
 }
@@ -243,7 +263,8 @@ void ServerRun(Server *server)
         prevTime = currentTime;
 
         elapsedTimeBetweenTicks += deltaTime;
-        elapsedTimeBetweenNetworkTicks += deltaTime;
+        elapsedTimeBetweenSnapshotTicks += deltaTime;
+        elapsedTimeBetweenEventTicks += deltaTime;
 
         int iResult;
 
@@ -269,7 +290,8 @@ void ServerRun(Server *server)
             }
         }
 
-        ServerTryNetworkTick(server);
+        ServerTrySnapshotTick(server);
+        ServerTryEventTick(server);
         ServerTryTick();
     }
 }

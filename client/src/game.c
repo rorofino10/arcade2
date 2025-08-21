@@ -41,9 +41,9 @@ const EntityID DEFAULT_BLUEENEMIES_INCREASE = 1;
 const COOLDOWN DEFAULT_WAVE_REFRESH_COOLDOWN = 2.0f;
 const COOLDOWN DEFAULT_SPAWN_INTERVAL = 0.5f;
 
-const double NetworkTPS = 10.0f;
-const double timeBetweenNetworkTicks = 1.0 / NetworkTPS;
-double elapsedTimeBetweenNetworkTicks = 0.0f;
+const double SnapshotTPS = 30.0f;
+const double timeBetweenSnapshotTicks = 1.0 / SnapshotTPS;
+double elapsedTimeBetweenSnapshotTicks = 0.0f;
 
 typedef struct WaveManager
 {
@@ -74,7 +74,7 @@ typedef struct WaveManager
 
 WaveManager waveManager = {
     .wave = 1,
-    .isWaveInProgress = false,
+    .isWaveInProgress = true,
     .waveRefreshCooldown = DEFAULT_WAVE_REFRESH_COOLDOWN,
     .waveRefreshCooldownRemaining = DEFAULT_WAVE_REFRESH_COOLDOWN,
 
@@ -169,16 +169,85 @@ typedef struct
 
 const EntityID entitiesCount = UINT8_MAX - 1;
 EntityID playerID = 0;
+Vector2 prevPlayerPosition = (Vector2){0};
 Entity *entities = NULL;
+Entity *clientsideEntities = NULL;
+
+/*
+[ASSETS] - DEFINITIONS - LOAD - UNLOAD
+[ASSETS] - DEFINITIONS - LOAD - UNLOAD
+[ASSETS] - DEFINITIONS - LOAD - UNLOAD
+[ASSETS] - DEFINITIONS - LOAD - UNLOAD
+[ASSETS] - DEFINITIONS - LOAD - UNLOAD
+[ASSETS] - DEFINITIONS - LOAD - UNLOAD
+*/
+
 Texture2D textures[ENTITY_TYPE_COUNT];
 Music backgroundMusic;
 Sound soundEffects[SOUND_EFFECT_COUNT];
 
+void LoadAllTextures()
+{
+    textures[ENTITY_PLAYER] = LoadTexture("assets/player.png");
+    textures[ENTITY_RED_ENEMY] = LoadTexture("assets/red_enemy.png");
+    textures[ENTITY_BLUE_ENEMY] = LoadTexture("assets/blue_enemy.png");
+    textures[ENTITY_BULLET] = LoadTexture("assets/bullet.png");
+    textures[ENTITY_POWERUP_SPEED] = LoadTexture("assets/powerup_speed.png");
+    textures[ENTITY_POWERUP_SHOOTING] = LoadTexture("assets/powerup_shooting.png");
+    textures[ENTITY_EXPLOSION] = LoadTexture("assets/explosion.png");
+    textures[ENTITY_NEUTRAL] = LoadTexture("assets/neutral.png");
+}
+
+void UnloadAllTextures()
+{
+    for (size_t i = 0; i < ENTITY_TYPE_COUNT; i++)
+    {
+        UnloadTexture(textures[i]);
+    }
+}
+void LoadAllSoundEffects()
+{
+    backgroundMusic = LoadMusicStream("assets/background_music.mp3");
+
+    soundEffects[SOUND_EFFECT_BULLET] = LoadSound("assets/laser.mp3");
+    soundEffects[SOUND_EFFECT_EXPLOSION] = LoadSound("assets/explosion.wav");
+    soundEffects[SOUND_EFFECT_POWERUP] = LoadSound("assets/power_up.mp3");
+}
+
+void UnloadAllSoundEffects()
+{
+    UnloadMusicStream(backgroundMusic);
+    for (size_t i = 0; i < SOUND_EFFECT_COUNT; i++)
+    {
+        UnloadSound(soundEffects[i]);
+    }
+}
+
+/*
+ASSETS - DEFINITIONS - LOAD - UNLOAD
+ASSETS - DEFINITIONS - LOAD - UNLOAD
+ASSETS - DEFINITIONS - LOAD - UNLOAD
+ASSETS - DEFINITIONS - LOAD - UNLOAD
+ASSETS - DEFINITIONS - LOAD - UNLOAD
+ASSETS - DEFINITIONS - LOAD - UNLOAD
+*/
+
 Camera2D camera = {.offset = (Vector2){screenWidth / 2, screenHeight / 2}, .rotation = 0.0f, .zoom = DEFAULT_BASE_ZOOM};
+
+void ShakeCamera(LIFETIME duration)
+{
+    shakeLifetime = duration;
+}
 
 #define FOR_EACH_ALIVE_ENTITY(i)                 \
     for (EntityID i = 0; i < entitiesCount; i++) \
         if (!entities[i].isAlive)                \
+            continue;                            \
+        else
+
+#define FOR_EACH_ALIVE_CLIENTSIDEENTITY(i)       \
+    for (EntityID i = 0; i < entitiesCount; i++) \
+        if (!clientsideEntities[i].isAlive)      \
             continue;                            \
         else
 
@@ -199,10 +268,10 @@ EntityID SpawnEntity(Vector2 position, Vector2 size, SPEED speed, EntityType typ
 {
     for (EntityID id = 0; id < entitiesCount; id++)
     {
-        if (entities[id].isAlive)
+        if (clientsideEntities[id].isAlive)
             continue;
 
-        entities[id] = (Entity){
+        clientsideEntities[id] = (Entity){
             .position = position,
             .direction = Vector2Zero(),
             .facing = DEFAULT_ENTITY_FACING,
@@ -218,64 +287,14 @@ EntityID SpawnEntity(Vector2 position, Vector2 size, SPEED speed, EntityType typ
     return -1;
 }
 
-EntityID SpawnPlayer()
-{
-    playerID = SpawnEntity(Vector2Zero(), DEFAULT_ENTITY_SIZE, DEFAULT_PLAYER_SPEED, ENTITY_PLAYER);
-    entities[playerID].shootingCooldownRemaining = 0.0f;
-    entities[playerID].shootingCooldown = DEFAULT_SHOOTING_COOLDOWN;
-    entities[playerID].powerupShootingLifetime = 0.0f;
-    entities[playerID].powerupSpeedLifetime = 0.0f;
-    entities[playerID].isPowerupSpeedActive = false;
-    entities[playerID].isPowerupShootingActive = false;
-    return playerID;
-}
-EntityID SpawnRedEnemy()
-{
-    Vector2 position = RandomSpawnPosition(entities[playerID].position);
-    EntityID enemyId = SpawnEntity(position, DEFAULT_ENTITY_SIZE, waveManager.redEnemiesSpeed, ENTITY_RED_ENEMY);
-    waveManager.spawnCooldownRemaining = waveManager.spawnCooldown;
-    waveManager.redEnemiesLeftToSpawn--;
-    waveManager.redEnemiesRemaining++;
-    return enemyId;
-}
-EntityID SpawnNeutral()
-{
-    Vector2 position = RandomSpawnPosition(entities[playerID].position);
-    EntityID neutralId = SpawnEntity(position, DEFAULT_ENTITY_SIZE, 0.0f, ENTITY_NEUTRAL);
-    entities[neutralId].shootingCooldownRemaining = DEFAULT_SHOOTING_COOLDOWN;
-    entities[neutralId].shootingCooldown = DEFAULT_SHOOTING_COOLDOWN * 3;
-    return neutralId;
-}
-EntityID SpawnBlueEnemy()
-{
-    Vector2 position = RandomSpawnPosition(entities[playerID].position);
-    EntityID enemyId = SpawnEntity(position, DEFAULT_ENTITY_SIZE, 0.0f, ENTITY_BLUE_ENEMY);
-    waveManager.spawnCooldownRemaining = waveManager.spawnCooldown;
-    waveManager.blueEnemiesLeftToSpawn--;
-    waveManager.blueEnemiesRemaining++;
-    return enemyId;
-}
-EntityID SpawnPowerupSpeed()
-{
-    Vector2 position = RandomSpawnPosition(entities[playerID].position);
-    EntityID powerupId = SpawnEntity(position, DEFAULT_ENTITY_SIZE, 0.0f, ENTITY_POWERUP_SPEED);
-
-    return powerupId;
-}
-EntityID SpawnPowerupShooting()
-{
-    Vector2 position = RandomSpawnPosition(entities[playerID].position);
-    EntityID powerupId = SpawnEntity(position, DEFAULT_ENTITY_SIZE, 0.0f, ENTITY_POWERUP_SHOOTING);
-    return powerupId;
-}
-EntityID SpawnExplosion()
+EntityID SpawnClientsideExplosion()
 {
     EntityID explosionId = SpawnEntity(Vector2Zero(), DEFAULT_ENTITY_SIZE, 0.0f, ENTITY_EXPLOSION);
     PlaySound(soundEffects[SOUND_EFFECT_EXPLOSION]);
-    shakeLifetime = DEFAULT_SHAKE_DURATION;
+    ShakeCamera(DEFAULT_SHAKE_DURATION);
     return explosionId;
 }
-EntityID SpawnBullet()
+EntityID SpawnClientsideBullet()
 {
     EntityID bulletId = SpawnEntity(Vector2Zero(), DEFAULT_BULLET_SIZE, DEFAULT_BULLET_SPEED, ENTITY_BULLET);
     entities[bulletId].lifetime = DEFAULT_BULLET_LIFETIME;
@@ -285,11 +304,12 @@ EntityID SpawnBullet()
 void ShootBullet(EntityID from, Vector2 direction)
 {
     PlaySound(soundEffects[SOUND_EFFECT_BULLET]);
-    EntityID bulletId = SpawnBullet();
-    entities[bulletId].position = entities[from].position;
-    entities[bulletId].parent = from;
-    entities[bulletId].direction = direction;
-    entities[bulletId].facing = direction;
+    EntityID bulletId = SpawnClientsideBullet();
+    Entity *entity = &clientsideEntities[bulletId];
+    entity->position = entities[from].position;
+    entity->parent = from;
+    entity->direction = direction;
+    entity->facing = direction;
 }
 void EntityShootBullet(EntityID entity)
 {
@@ -314,8 +334,6 @@ Rectangle MakeRectangleFromCenter(Vector2 center, Vector2 size)
 
 void GenerateWave()
 {
-    SpawnPowerupShooting();
-    SpawnPowerupSpeed();
     waveManager.isWaveInProgress = true;
     waveManager.waveRefreshCooldownRemaining = waveManager.waveRefreshCooldown;
 
@@ -325,15 +343,6 @@ void GenerateWave()
 
     waveManager.blueEnemiesToSpawn += waveManager.blueEnemiesIncrease;
     waveManager.blueEnemiesLeftToSpawn = waveManager.blueEnemiesToSpawn;
-}
-
-void CheckWaveEnded()
-{
-    if (waveManager.redEnemiesRemaining == 0 && waveManager.blueEnemiesRemaining == 0)
-    {
-        waveManager.wave++;
-        waveManager.isWaveInProgress = false;
-    }
 }
 
 void ApplyPowerupSpeed(EntityID entityId, EntityID powerupId)
@@ -354,106 +363,26 @@ void ApplyPowerupShooting(EntityID entityId, EntityID powerupId)
     entities[powerupId].isAlive = false;
 }
 
-void handleBlueEnemyDeath(EntityID blueEnemyId)
+void handlePlayerDeath(EntityID entityID)
 {
-    for (_Float16 angleDeg = 0; angleDeg < FULL_CIRCLE; angleDeg += FULL_CIRCLE / BLUE_ENEMY_BULLETS)
-    {
-        _Float16 angleRad = angleDeg * DEG2RAD;
-
-        Vector2 dir = {cosf(angleRad), sinf(angleRad)};
-
-        ShootBullet(blueEnemyId, dir);
-    }
-    waveManager.blueEnemiesRemaining--;
-}
-void handleRedEnemyDeath(EntityID entityId)
-{
-    waveManager.redEnemiesRemaining--;
-}
-
-void handlePlayerDeath(EntityID playerId)
-{
+    if (playerID != entityID)
+        return;
     gameState = LOST;
 }
 
-void KillEntity(EntityID entityId)
+void GameHandleEntityDiedEvent(ServerEntityDiedEvent *event)
 {
-    if (!entities[entityId].isAlive)
-        return;
-    switch (entities[entityId].type)
+    switch (entities[event->id].type)
     {
-    case ENTITY_BLUE_ENEMY:
-        handleBlueEnemyDeath(entityId);
-        CheckWaveEnded();
-        break;
-
-    case ENTITY_RED_ENEMY:
-        handleRedEnemyDeath(entityId);
-        CheckWaveEnded();
-        break;
     case ENTITY_PLAYER:
-        handlePlayerDeath(entityId);
+        handlePlayerDeath(event->id);
         break;
     default:
         break;
     }
-    EntityID explosionId = SpawnExplosion();
-    entities[explosionId].position = entities[entityId].position;
-    entities[entityId].isAlive = false;
-}
-
-#define SetCollision(entityA, entityB) if ((entities[idA].type == entityA && entities[idB].type == entityB))
-void handleCollisionBetween(EntityID idA, EntityID idB)
-{
-    if (entities[idA].parent == idB)
-        return;
-
-    Rectangle recA = MakeRectangleFromCenter(entities[idA].position, entities[idA].size);
-    Rectangle recB = MakeRectangleFromCenter(entities[idB].position, entities[idB].size);
-    if (!CheckCollisionRecs(recA, recB))
-        return;
-    SetCollision(ENTITY_BULLET, ENTITY_RED_ENEMY)
-    {
-        KillEntity(idB);
-        return;
-    }
-    SetCollision(ENTITY_BULLET, ENTITY_BLUE_ENEMY)
-    {
-        KillEntity(idB);
-        return;
-    }
-    SetCollision(ENTITY_BULLET, ENTITY_NEUTRAL)
-    {
-        KillEntity(idB);
-        return;
-    }
-    SetCollision(ENTITY_BULLET, ENTITY_PLAYER)
-    {
-        KillEntity(idB);
-        return;
-    }
-    SetCollision(ENTITY_PLAYER, ENTITY_RED_ENEMY)
-    {
-        KillEntity(idA);
-        return;
-    }
-    SetCollision(ENTITY_PLAYER, ENTITY_POWERUP_SPEED)
-    {
-        ApplyPowerupSpeed(idA, idB);
-        return;
-    }
-    SetCollision(ENTITY_PLAYER, ENTITY_POWERUP_SHOOTING)
-    {
-        ApplyPowerupShooting(idA, idB);
-        return;
-    }
-}
-
-void HandleCollisions()
-{
-    FOR_EACH_ALIVE_ENTITY(idA)
-    FOR_EACH_ALIVE_ENTITY(idB)
-    handleCollisionBetween(idA, idB);
+    EntityID explosionId = SpawnClientsideExplosion();
+    clientsideEntities[explosionId].position = (Vector2){.x = event->deathPosX, .y = event->deathPosY};
+    entities[event->id].isAlive = false;
 }
 
 void KillAllEntities()
@@ -463,32 +392,8 @@ void KillAllEntities()
     {
         entities[entityId].isAlive = false;
     }
-    waveManager.redEnemiesRemaining = 0;
-    waveManager.blueEnemiesRemaining = 0;
 }
 
-void RestartWave()
-{
-    waveManager.wave = 1;
-    waveManager.blueEnemiesToSpawn = 0;
-    waveManager.redEnemiesToSpawn = 0;
-}
-
-void StartGame()
-{
-    SpawnPlayer();
-    SpawnNeutral();
-    GenerateWave();
-}
-
-void RestartGame()
-{
-    StopMusicStream(backgroundMusic);
-    PlayMusicStream(backgroundMusic);
-    KillAllEntities();
-    RestartWave();
-    StartGame();
-}
 void ZoomIn()
 {
     // zoomBase *= DEFAULT_ZOOM_IN_INTENSITY;
@@ -508,8 +413,6 @@ void Input(struct Client *client)
     if (IsKeyPressed(KEY_P))
         gameState = PAUSED;
 
-    if (IsKeyPressed(KEY_R))
-        RestartGame();
     if (IsKeyPressed(KEY_O))
         debug = !debug;
 
@@ -535,30 +438,6 @@ void Input(struct Client *client)
 
     if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) || IsKeyDown(KEY_SPACE))
         EntityShootBullet(playerID);
-}
-
-void UpdateWave()
-{
-    if (!waveManager.isWaveInProgress && waveManager.waveRefreshCooldownRemaining > 0.0f)
-        waveManager.waveRefreshCooldownRemaining -= GetFrameTime();
-    if (!waveManager.isWaveInProgress && waveManager.waveRefreshCooldownRemaining <= 0.0f)
-        GenerateWave();
-    if (waveManager.isWaveInProgress)
-    {
-        if (waveManager.redEnemiesLeftToSpawn != 0 || waveManager.blueEnemiesLeftToSpawn != 0)
-        {
-            if (waveManager.spawnCooldownRemaining > 0.0f)
-                waveManager.spawnCooldownRemaining -= GetFrameTime();
-            if (waveManager.spawnCooldownRemaining <= 0.0f && waveManager.redEnemiesLeftToSpawn != 0)
-            {
-                SpawnRedEnemy();
-            }
-            if (waveManager.spawnCooldownRemaining <= 0.0f && waveManager.blueEnemiesLeftToSpawn != 0)
-            {
-                SpawnBlueEnemy();
-            }
-        }
-    }
 }
 
 void UpdateCameraMovement()
@@ -605,24 +484,68 @@ void UpdateCameraMovement()
         camera.zoom = zoomBase;
 }
 
+void GameUpdatePlayerID(uint8_t newPlayerID)
+{
+    playerID = newPlayerID;
+}
+
+void GameUpdateNetworkEntities(ServerEntityState *networkEntity, int count)
+{
+    for (int i = 0; i < entitiesCount; i++)
+    {
+        entities[i].isAlive = false;
+    }
+
+    for (int i = 0; i < count; i++)
+    {
+
+        if (!(networkEntity[i].id == playerID))
+        {
+            entities[networkEntity[i].id].position.x = networkEntity[i].x;
+            entities[networkEntity[i].id].position.y = networkEntity[i].y;
+            entities[networkEntity[i].id].direction.x = networkEntity[i].vx;
+            entities[networkEntity[i].id].direction.y = networkEntity[i].vy;
+            if (networkEntity[i].type != ENTITY_RED_ENEMY)
+                entities[networkEntity[i].id].facing = DEFAULT_ENTITY_FACING;
+        }
+
+        entities[networkEntity[i].id].speed = networkEntity[i].speed;
+        entities[networkEntity[i].id].isAlive = true;
+        entities[networkEntity[i].id].type = networkEntity[i].type;
+        entities[networkEntity[i].id].size = DEFAULT_ENTITY_SIZE;
+        entities[networkEntity[i].id].parent = networkEntity->id;
+        entities[networkEntity[i].id].lifetime = 1.0f;
+
+        if (networkEntity[i].type == ENTITY_BULLET)
+        {
+            entities[networkEntity[i].id].size = DEFAULT_BULLET_SIZE;
+            entities[networkEntity[i].id].lifetime = DEFAULT_BULLET_LIFETIME;
+        }
+    }
+}
+void GameUpdateNetworkWave(ServerWaveSnapshot *waveSnapshot)
+{
+    waveManager.wave = waveSnapshot->wave;
+    waveManager.blueEnemiesRemaining = waveSnapshot->blueEnemiesRemaining;
+    waveManager.redEnemiesRemaining = waveSnapshot->redEnemiesRemaining;
+}
+
 void UpdateNetwork(struct Client *client)
 {
-    while (elapsedTimeBetweenNetworkTicks >= timeBetweenNetworkTicks)
+    while (elapsedTimeBetweenSnapshotTicks >= timeBetweenSnapshotTicks)
     {
-        elapsedTimeBetweenNetworkTicks -= timeBetweenNetworkTicks;
+        elapsedTimeBetweenSnapshotTicks -= timeBetweenSnapshotTicks;
         PacketMoveEvent mh = {.nx = (int16_t)entities[playerID].position.x, .ny = (int16_t)entities[playerID].position.y};
-        printf("Position x: %d, y:%d\n", (int16_t)entities[playerID].position.x, (int16_t)entities[playerID].position.y);
-        NetworkPushInputEvent(PACKET_INPUT_MOVE, &mh, sizeof(mh));
+        if (entities[playerID].direction.x != 0.0f || entities[playerID].direction.y != 0.0f)
+            NetworkPushInputEvent(PACKET_INPUT_MOVE, &mh, sizeof(mh));
         NetworkSendPacket(client);
         NetworkPrepareBuffer();
         NetworkRecievePacket(client);
     }
 }
 
-void Update(struct Client *client)
+void UpdateEntities()
 {
-    UpdateMusicStream(backgroundMusic);
-
     FOR_EACH_ALIVE_ENTITY(i)
     {
         Vector2 newPos = Vector2Add(entities[i].position, Vector2Scale(entities[i].direction, entities[i].speed * GetFrameTime()));
@@ -637,33 +560,7 @@ void Update(struct Client *client)
             entities[i].direction = distance;
             entities[i].facing = distance;
             break;
-        case ENTITY_BULLET:
-            entities[i].lifetime -= GetFrameTime();
-            break;
-        case ENTITY_EXPLOSION:
-            entities[i].lifetime -= GetFrameTime();
-            break;
-        case ENTITY_PLAYER:
-            if (entities[i].shootingCooldownRemaining > 0.0f)
-                entities[i].shootingCooldownRemaining -= GetFrameTime();
-            if (entities[i].powerupSpeedLifetime > 0.0f)
-                entities[i].powerupSpeedLifetime -= GetFrameTime();
-            if (entities[i].isPowerupSpeedActive && entities[i].powerupSpeedLifetime <= 0.0f)
-            {
-                entities[i].isPowerupSpeedActive = false;
-                entities[i].speed = DEFAULT_PLAYER_SPEED;
-            }
-            if (entities[i].powerupShootingLifetime > 0.0f)
-                entities[i].powerupShootingLifetime -= GetFrameTime();
-            if (entities[i].isPowerupShootingActive && entities[i].powerupShootingLifetime <= 0.0f)
-            {
-                entities[i].powerupShootingLifetime = false;
-                entities[i].shootingCooldown = DEFAULT_SHOOTING_COOLDOWN;
-            }
-            break;
         case ENTITY_NEUTRAL:
-            if (entities[i].shootingCooldownRemaining > 0.0f)
-                entities[i].shootingCooldownRemaining -= GetFrameTime();
             FOR_EACH_ALIVE_ENTITY(target)
             {
                 if (entities[target].type != ENTITY_RED_ENEMY)
@@ -673,7 +570,6 @@ void Update(struct Client *client)
                     Vector2 neutralFacing = Vector2Normalize(Vector2Subtract(entities[target].position, entities[i].position));
 
                     entities[i].facing = neutralFacing;
-                    EntityShootBullet(i);
                 }
             }
             break;
@@ -681,8 +577,35 @@ void Update(struct Client *client)
             break;
         }
     }
-    HandleCollisions();
-    UpdateWave();
+}
+void UpdateClientsideEntities()
+{
+    FOR_EACH_ALIVE_CLIENTSIDEENTITY(i)
+    {
+        Entity *clientsideEntity = &clientsideEntities[i];
+        clientsideEntity->position = Vector2Add(clientsideEntity->position, Vector2Scale(clientsideEntity->direction, clientsideEntity->speed * GetFrameTime()));
+        if (clientsideEntity->lifetime < 0.0f)
+            clientsideEntity->isAlive = false;
+        switch (clientsideEntity->type)
+        {
+        case ENTITY_BULLET:
+            clientsideEntity->lifetime -= GetFrameTime();
+            break;
+        case ENTITY_EXPLOSION:
+            clientsideEntity->lifetime -= GetFrameTime();
+            break;
+        default:
+            break;
+        }
+    }
+}
+
+void Update(struct Client *client)
+{
+    UpdateMusicStream(backgroundMusic);
+
+    UpdateEntities();
+    UpdateClientsideEntities();
     UpdateCameraMovement();
     UpdateNetwork(client);
 }
@@ -724,6 +647,7 @@ void Render()
 
     DrawText(TextFormat("Red enemies: %2i", waveManager.redEnemiesRemaining), 10, 10, 30, RED);
     DrawText(TextFormat("Blue enemies: %2i", waveManager.blueEnemiesRemaining), 10, 50, 30, BLUE);
+    DrawText(TextFormat("Player ID: %1i", playerID), 10, 90, 30, BLACK);
 
     BeginMode2D(camera);
 
@@ -747,6 +671,18 @@ void Render()
         float rotation = atan2f(entity.facing.y, entity.facing.x) * RAD2DEG;
         DrawTexturePro(texture, src, dest, origin, rotation, WHITE);
     }
+    for (EntityID i = 0; i < entitiesCount; i++)
+    {
+        Entity entity = clientsideEntities[i];
+        if (!entity.isAlive)
+            continue;
+        Texture2D texture = textures[entity.type];
+        Rectangle src = {.x = 0, .y = 0, .width = texture.width, .height = texture.height};
+        Rectangle dest = {.x = entity.position.x, .y = entity.position.y, .width = entity.size.x, .height = entity.size.y};
+        Vector2 origin = (Vector2){entity.size.x / 2.0f, entity.size.y / 2.0f};
+        float rotation = atan2f(entity.facing.y, entity.facing.x) * RAD2DEG;
+        DrawTexturePro(texture, src, dest, origin, rotation, WHITE);
+    }
 
     if (debug)
         RenderDebug();
@@ -756,43 +692,6 @@ void Render()
     DrawText(TextFormat("%03i%%", (int)lroundf(zoomBase * 100.0f)), screenWidth - 50, screenHeight - 25, 20, BLACK);
 
     EndDrawing();
-}
-
-void LoadAllTextures()
-{
-    textures[ENTITY_PLAYER] = LoadTexture("assets/player.png");
-    textures[ENTITY_RED_ENEMY] = LoadTexture("assets/red_enemy.png");
-    textures[ENTITY_BLUE_ENEMY] = LoadTexture("assets/blue_enemy.png");
-    textures[ENTITY_BULLET] = LoadTexture("assets/bullet.png");
-    textures[ENTITY_POWERUP_SPEED] = LoadTexture("assets/powerup_speed.png");
-    textures[ENTITY_POWERUP_SHOOTING] = LoadTexture("assets/powerup_shooting.png");
-    textures[ENTITY_EXPLOSION] = LoadTexture("assets/explosion.png");
-    textures[ENTITY_NEUTRAL] = LoadTexture("assets/neutral.png");
-}
-
-void UnloadAllTextures()
-{
-    for (size_t i = 0; i < ENTITY_TYPE_COUNT; i++)
-    {
-        UnloadTexture(textures[i]);
-    }
-}
-void LoadAllSoundEffects()
-{
-    backgroundMusic = LoadMusicStream("assets/background_music.mp3");
-
-    soundEffects[SOUND_EFFECT_BULLET] = LoadSound("assets/laser.mp3");
-    soundEffects[SOUND_EFFECT_EXPLOSION] = LoadSound("assets/explosion.wav");
-    soundEffects[SOUND_EFFECT_POWERUP] = LoadSound("assets/power_up.mp3");
-}
-
-void UnloadAllSoundEffects()
-{
-    UnloadMusicStream(backgroundMusic);
-    for (size_t i = 0; i < SOUND_EFFECT_COUNT; i++)
-    {
-        UnloadSound(soundEffects[i]);
-    }
 }
 
 void RenderLostScreen()
@@ -815,8 +714,7 @@ void GameRun(struct Client *client)
     SetTargetFPS(60);
 
     entities = calloc(entitiesCount, sizeof(Entity));
-
-    StartGame();
+    clientsideEntities = calloc(entitiesCount, sizeof(Entity));
 
     LoadAllTextures();
     LoadAllSoundEffects();
@@ -830,7 +728,7 @@ void GameRun(struct Client *client)
         double deltaTime = currentTime - prevTime;
         prevTime = currentTime;
 
-        elapsedTimeBetweenNetworkTicks += deltaTime;
+        elapsedTimeBetweenSnapshotTicks += deltaTime;
 
         switch (gameState)
         {
@@ -862,4 +760,5 @@ void GameRun(struct Client *client)
     CloseAudioDevice();
     CloseWindow();
     free(entities);
+    free(clientsideEntities);
 }

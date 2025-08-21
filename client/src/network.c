@@ -8,6 +8,7 @@
 #include "client.h"
 #include "network.h"
 #include "packet.h"
+#include "game.h"
 
 char buffer[MAX_PACKET_SIZE];
 size_t offset = 0;
@@ -30,20 +31,50 @@ void NetworkRecievePacket(Client *client)
     switch (header.type)
     {
     case PACKET_ENTITY_SNAPSHOT:
-    {
         ServerEntityState *entitiesPacket = (ServerEntityState *)buffer;
         int count = header.size / sizeof(ServerEntityState);
-        printf("Received %d entities from server\n", count);
+        // printf("Received %d entities from server\n", count);
+        GameUpdateNetworkEntities(entitiesPacket, count);
 
         for (int i = 0; i < count; i++)
         {
             ServerEntityState *e = &entitiesPacket[i];
-            printf("Entity %d: id=%d, x=%d, y=%d\n",
-                   i, e->id, e->x, e->y);
+            // printf("Entity %d: id=%d, x=%d, y=%d, type=%d, speed=%f\n",
+            //        i, e->id, e->x, e->y, e->type, e->speed);
         }
-    }
-    break;
+        break;
+    case PACKET_WAVE_SNAPSHOT:
+        ServerWaveSnapshot *waveSnapshot = (ServerWaveSnapshot *)buffer;
+        // printf("Received Wave Snapshot, wave:%d\n", waveSnapshot->wave);
+        GameUpdateNetworkWave(waveSnapshot);
+        break;
+    case PACKET_ASSIGN_PLAYER:
+        ServerAssignPlayerMessage *assignPlayerMessage = (ServerAssignPlayerMessage *)buffer;
+        // printf("Received Assign Player Message: %d\n\n\n\n\n\n\n\n\n", assignPlayerMessage->playerID);
+        GameUpdatePlayerID(assignPlayerMessage->playerID);
+        break;
+    case PACKET_SERVER_EVENTS:
+        size_t offset = 0;
+        while (offset < header.size)
+        {
+            ServerEventHeader *eheader = (ServerEventHeader *)(buffer + offset);
+            offset += sizeof(ServerEventHeader);
 
+            char *edata = buffer + offset;
+            offset += eheader->size;
+
+            switch (eheader->type)
+            {
+            case PACKET_ENTITY_DIED:
+                ServerEntityDiedEvent *event = (ServerEntityDiedEvent *)edata;
+                printf("Entity[%d] died at (%d,%d)\n", event->id, event->deathPosX, event->deathPosY);
+                GameHandleEntityDiedEvent(event);
+                break;
+            default:
+                break;
+            }
+        }
+        break;
     default:
         printf("Unknown packet type %d\n", header.type);
         break;
@@ -56,6 +87,8 @@ void NetworkSendPacket(Client *client)
     header.type = PACKET_INPUT_EVENT;
     header.size = offset;
 
+    if (header.size <= 0)
+        return;
     int sent;
     sent = send(client->socket, (char *)&header, sizeof(header), 0);
     if (sent == SOCKET_ERROR)

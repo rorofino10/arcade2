@@ -8,14 +8,13 @@
 
 struct Server;
 
-typedef struct
-{
-    uint8_t id;
-    uint16_t x, y;
-    float dx, dy;
-} NetworkEntity;
+void NetworkSetEntities(ServerEntityState *entities, int amount);
+void NetworkSetWaveState(ServerWaveSnapshot waveState);
+void NetworkSendEntitiesSnapshot(struct Server *server);
+void NetworkSendWaveSnapshot(struct Server *server);
+void NetworkSendAssignedPlayerID(struct Server *server, int clientIndex, uint8_t playerID);
 
-void NetworkSetEntities(NetworkEntity *entities, int amount);
-void NetworkSendEntities(struct Server *server);
-
+void NetworkPrepareEventBuffer();
+int NetworkPushEntityDiedEvent(struct ServerEntityDiedEvent event);
+void NetworkSendEventPacket(struct Server *server);
 #endif

@@ -1,34 +1,19 @@
-CC = gcc
-CFLAGS = -g -IC:/raylib/include -Isrc
-LDFLAGS = -LC:/raylib/lib
-LDLIBS = -lraylib -lopengl32 -lgdi32 -lwinmm
+.PHONY: all client server clean
 
-CODEDIRS = src
-CFILES = $(foreach D,$(CODEDIRS),$(wildcard $(D)/*.c))
-OBJECTS = $(patsubst src/%,build/%,$(CFILES:.c=.o))
+all: client server
 
-BINDIR = bin
-BUILDDIR = build
-BINNAME = game
-BINARY = ${BINDIR}/${BINNAME}.exe
+client:
+	$(MAKE) -C client
 
-all: ${BINARY}
-
-${BINARY}: ${OBJECTS} | ${BINDIR}
-	${CC} -o $@ $^ ${LDFLAGS} ${LDLIBS}
-
-build/%.o: src/%.c | ${BUILDDIR}
-	mkdir -p $(dir $@)
-	${CC} ${CFLAGS} -c $< -o $@
-
-${BUILDDIR}:
-	mkdir -p ${BUILDDIR}
-
-${BINDIR}:
-	mkdir -p ${BINDIR}
-
-test:
-	./${BINARY}
+server:
+	$(MAKE) -C server
 
 clean:
-	rm -rf ${BUILDDIR} ${BINDIR}
+	$(MAKE) -C client clean
+	$(MAKE) -C server clean
+
+runclient: client
+	./client/bin/client.exe
+
+runserver: server
+	./server/bin/server.exe

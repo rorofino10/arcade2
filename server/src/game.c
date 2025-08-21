@@ -4,9 +4,12 @@
 #include "stdio.h"
 #include "stdlib.h"
 #include "stdint.h"
+#include "float.h"
 
 #include "game.h"
 #include "network.h"
+
+#define MAX_PLAYERS 2
 
 typedef uint8_t EntityID;
 typedef float _float32_t;
@@ -88,8 +91,8 @@ WaveManager waveManager = {
     .blueEnemiesRemaining = 0,
 };
 
-const uint16_t PLAYER_SAFE_RADIUS = 100;
-const uint16_t ENTITY_SPAWN_RADIUS = 300;
+const uint16_t PLAYER_SAFE_RADIUS = 500;
+const uint16_t ENTITY_SPAWN_RADIUS = 700;
 const _float32_t NEUTRAL_SHOOT_RADIUS = 80.0f;
 
 typedef enum GameState
@@ -136,7 +139,7 @@ typedef struct
 
 const EntityID entitiesCount = UINT8_MAX - 1;
 GameState gameState = PLAYING;
-EntityID playerID = 0;
+EntityID playerIDs[MAX_PLAYERS] = {-1};
 Entity *entities = NULL;
 
 #define FOR_EACH_ALIVE_ENTITY(i)                 \
@@ -185,18 +188,18 @@ EntityID SpawnEntity(Vector2 position, Vector2 size, SPEED speed, EntityType typ
 
 EntityID SpawnPlayer()
 {
-    playerID = SpawnEntity(Vector2Zero(), DEFAULT_ENTITY_SIZE, DEFAULT_PLAYER_SPEED, ENTITY_PLAYER);
-    entities[playerID].shootingCooldownRemaining = 0.0f;
-    entities[playerID].shootingCooldown = DEFAULT_SHOOTING_COOLDOWN;
-    entities[playerID].powerupShootingLifetime = 0.0f;
-    entities[playerID].powerupSpeedLifetime = 0.0f;
-    entities[playerID].isPowerupSpeedActive = false;
-    entities[playerID].isPowerupShootingActive = false;
-    return playerID;
+    EntityID newPlayerID = SpawnEntity(Vector2Zero(), DEFAULT_ENTITY_SIZE, DEFAULT_PLAYER_SPEED, ENTITY_PLAYER);
+    entities[newPlayerID].shootingCooldownRemaining = 0.0f;
+    entities[newPlayerID].shootingCooldown = DEFAULT_SHOOTING_COOLDOWN;
+    entities[newPlayerID].powerupShootingLifetime = 0.0f;
+    entities[newPlayerID].powerupSpeedLifetime = 0.0f;
+    entities[newPlayerID].isPowerupSpeedActive = false;
+    entities[newPlayerID].isPowerupShootingActive = false;
+    return newPlayerID;
 }
 EntityID SpawnRedEnemy()
 {
-    Vector2 position = RandomSpawnPosition(entities[playerID].position);
+    Vector2 position = RandomSpawnPosition(Vector2Zero());
     EntityID enemyId = SpawnEntity(position, DEFAULT_ENTITY_SIZE, waveManager.redEnemiesSpeed, ENTITY_RED_ENEMY);
     waveManager.spawnCooldownRemaining = waveManager.spawnCooldown;
     waveManager.redEnemiesLeftToSpawn--;
@@ -205,7 +208,7 @@ EntityID SpawnRedEnemy()
 }
 EntityID SpawnNeutral()
 {
-    Vector2 position = RandomSpawnPosition(entities[playerID].position);
+    Vector2 position = RandomSpawnPosition(Vector2Zero());
     EntityID neutralId = SpawnEntity(position, DEFAULT_ENTITY_SIZE, 0.0f, ENTITY_NEUTRAL);
     entities[neutralId].shootingCooldownRemaining = DEFAULT_SHOOTING_COOLDOWN;
     entities[neutralId].shootingCooldown = DEFAULT_SHOOTING_COOLDOWN * 3;
@@ -213,7 +216,7 @@ EntityID SpawnNeutral()
 }
 EntityID SpawnBlueEnemy()
 {
-    Vector2 position = RandomSpawnPosition(entities[playerID].position);
+    Vector2 position = RandomSpawnPosition(Vector2Zero());
     EntityID enemyId = SpawnEntity(position, DEFAULT_ENTITY_SIZE, 0.0f, ENTITY_BLUE_ENEMY);
     waveManager.spawnCooldownRemaining = waveManager.spawnCooldown;
     waveManager.blueEnemiesLeftToSpawn--;
@@ -222,14 +225,14 @@ EntityID SpawnBlueEnemy()
 }
 EntityID SpawnPowerupSpeed()
 {
-    Vector2 position = RandomSpawnPosition(entities[playerID].position);
+    Vector2 position = RandomSpawnPosition(Vector2Zero());
     EntityID powerupId = SpawnEntity(position, DEFAULT_ENTITY_SIZE, 0.0f, ENTITY_POWERUP_SPEED);
 
     return powerupId;
 }
 EntityID SpawnPowerupShooting()
 {
-    Vector2 position = RandomSpawnPosition(entities[playerID].position);
+    Vector2 position = RandomSpawnPosition(Vector2Zero());
     EntityID powerupId = SpawnEntity(position, DEFAULT_ENTITY_SIZE, 0.0f, ENTITY_POWERUP_SHOOTING);
     return powerupId;
 }
@@ -264,6 +267,7 @@ void EntityShootBullet(EntityID entity)
 
 void ShootBulletInput(int clientIndex, float dx, float dy)
 {
+    EntityID playerID = playerIDs[clientIndex];
     if (entities[playerID].shootingCooldownRemaining <= 0.0f)
     {
         entities[playerID].shootingCooldownRemaining = entities[playerID].shootingCooldown;
@@ -340,8 +344,7 @@ void handleRedEnemyDeath(EntityID entityId)
 
 void handlePlayerDeath(EntityID playerId)
 {
-    gameState = LOST;
-    printf("Player died\n");
+    printf("[GAME]: Player[%d] died\n", playerId);
 }
 
 void KillEntity(EntityID entityId)
@@ -365,8 +368,9 @@ void KillEntity(EntityID entityId)
     default:
         break;
     }
-    EntityID explosionId = SpawnExplosion();
-    entities[explosionId].position = entities[entityId].position;
+    NetworkPushEntityDiedEvent((ServerEntityDiedEvent){.id = entityId, .deathPosX = entities[entityId].position.x, .deathPosY = entities[entityId].position.y});
+    // EntityID explosionId = SpawnExplosion();
+    // entities[explosionId].position = entities[entityId].position;
     entities[entityId].isAlive = false;
 }
 
@@ -395,16 +399,16 @@ void handleCollisionBetween(EntityID idA, EntityID idB)
         KillEntity(idB);
         return;
     }
-    // SetCollision(ENTITY_BULLET, ENTITY_PLAYER)
-    // {
-    //     KillEntity(idB);
-    //     return;
-    // }
-    // SetCollision(ENTITY_PLAYER, ENTITY_RED_ENEMY)
-    // {
-    //     KillEntity(idA);
-    //     return;
-    // }
+    SetCollision(ENTITY_BULLET, ENTITY_PLAYER)
+    {
+        KillEntity(idB);
+        return;
+    }
+    SetCollision(ENTITY_PLAYER, ENTITY_RED_ENEMY)
+    {
+        KillEntity(idA);
+        return;
+    }
     SetCollision(ENTITY_PLAYER, ENTITY_POWERUP_SPEED)
     {
         ApplyPowerupSpeed(idA, idB);
@@ -444,8 +448,6 @@ void RestartWave()
 
 void StartGame()
 {
-    SpawnPlayer();
-    // SpawnNeutral();
     GenerateWave();
 }
 
@@ -456,24 +458,41 @@ void RestartGame()
     StartGame();
 }
 
+uint8_t GameAssignPlayerToClient(int clientIndex)
+{
+    EntityID newPlayerID = SpawnPlayer();
+    playerIDs[clientIndex] = newPlayerID;
+    return newPlayerID;
+}
+
 void UpdateNetworkEntities()
 {
     int entitiesAmountToSend = 0;
-    NetworkEntity entitiesToSend[entitiesCount];
+    ServerEntityState entitiesToSend[entitiesCount];
     FOR_EACH_ALIVE_ENTITY(id)
     {
         entitiesToSend[entitiesAmountToSend].id = entities[id].id;
         entitiesToSend[entitiesAmountToSend].x = entities[id].position.x;
         entitiesToSend[entitiesAmountToSend].y = entities[id].position.y;
-        entitiesToSend[entitiesAmountToSend].dx = entities[id].direction.x;
-        entitiesToSend[entitiesAmountToSend].dy = entities[id].direction.y;
+        entitiesToSend[entitiesAmountToSend].vx = entities[id].direction.x;
+        entitiesToSend[entitiesAmountToSend].vy = entities[id].direction.y;
+        entitiesToSend[entitiesAmountToSend].speed = entities[id].speed;
+        entitiesToSend[entitiesAmountToSend].type = entities[id].type;
+
         entitiesAmountToSend++;
     }
     NetworkSetEntities(entitiesToSend, entitiesAmountToSend);
 }
 
+void UpdateNetworkWave()
+{
+    ServerWaveSnapshot waveState = {.wave = waveManager.wave, .blueEnemiesRemaining = waveManager.blueEnemiesRemaining, .redEnemiesRemaining = waveManager.redEnemiesRemaining};
+    NetworkSetWaveState(waveState);
+}
+
 void UpdatePlayerPosition(int clientIndex, int16_t nx, int16_t ny)
 {
+    EntityID playerID = playerIDs[clientIndex];
     entities[playerID].position = (Vector2){.x = (float)nx, .y = (float)ny};
 }
 
@@ -500,6 +519,33 @@ void UpdateWave(double delta)
         }
     }
 }
+
+Vector2 FindDistanceToPlayer(Vector2 from)
+{
+    float closestDist = FLT_MAX;
+    Vector2 closestDistVec = {0};
+    for (EntityID i = 0; i < MAX_PLAYERS; i++)
+    {
+        EntityID playerID = playerIDs[i];
+        if (playerID == -1)
+            continue;
+        if (!entities[playerID].isAlive || !entities[playerID].type == ENTITY_PLAYER)
+            continue;
+        Entity *player = &entities[playerID];
+        float dx = player->position.x - from.x;
+        float dy = player->position.y - from.y;
+        float distSq = dx * dx + dy * dy;
+
+        if (distSq < closestDist)
+        {
+            closestDist = distSq;
+            closestDistVec = (Vector2){dx, dy};
+        }
+    }
+
+    return closestDistVec;
+}
+
 void GameUpdate(double delta)
 {
     FOR_EACH_ALIVE_ENTITY(i)
@@ -512,7 +558,8 @@ void GameUpdate(double delta)
         switch (entities[i].type)
         {
         case ENTITY_RED_ENEMY:
-            Vector2 distance = Vector2Normalize(Vector2Subtract(entities[playerID].position, entities[i].position));
+            // Move to closest player
+            Vector2 distance = Vector2Normalize(FindDistanceToPlayer(entities[i].position));
             entities[i].direction = distance;
             entities[i].facing = distance;
             break;
@@ -563,6 +610,7 @@ void GameUpdate(double delta)
     HandleCollisions();
     UpdateWave(delta);
     UpdateNetworkEntities();
+    UpdateNetworkWave();
 }
 
 void GameInit()

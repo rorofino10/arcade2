@@ -72,6 +72,9 @@ int ClientInit(Client *client)
         return 1;
     }
 
+    u_long mode = 1;
+    ioctlsocket(client->socket, FIONBIO, &mode);
+
     printf("Connected to %s:%s\n", DEFAULT_HOST, DEFAULT_PORT);
 }
 
