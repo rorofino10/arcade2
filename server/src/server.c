@@ -22,7 +22,7 @@ const double SnapshotTPS = 10.0f;
 const double timeBetweenSnapshotTicks = 1.0 / SnapshotTPS;
 double elapsedTimeBetweenSnapshotTicks = 0.0f;
 
-const double EventTPS = 30.0f;
+const double EventTPS = 35.0f;
 const double timeBetweenEventTicks = 1.0 / EventTPS;
 double elapsedTimeBetweenEventTicks = 0.0f;
 
