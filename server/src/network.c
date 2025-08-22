@@ -20,20 +20,64 @@ void NetworkPrepareEventBuffer() { eventBufferOffset = 0; }
 
 int NetworkPushEntityDiedEvent(ServerEntityDiedEvent event)
 {
+
     const size_t capacity = MAX_PACKET_SIZE - sizeof(ServerPacketHeader);
     const size_t size = sizeof(ServerEntityDiedEvent);
     const size_t need = sizeof(ServerEventHeader) + size;
+    printf("Pushing Entity Died Event, %d bytes\n", size);
 
     if (need > capacity || eventBufferOffset + need > capacity)
         return 1;
 
-    ServerEventHeader *eventHeader = (ServerEventHeader *)eventBuffer + eventBufferOffset;
-    eventHeader->type = PACKET_ENTITY_DIED;
-    eventHeader->size = size;
-
-    eventBufferOffset += sizeof(ServerEventHeader);
+    ServerEventHeader eventHeader;
+    eventHeader.type = SERVER_EVENT_ENTITY_DIED;
+    eventHeader.size = size;
+    memcpy(eventBuffer + eventBufferOffset, &eventHeader, sizeof(eventHeader));
+    eventBufferOffset += sizeof(eventHeader);
 
     memcpy(eventBuffer + eventBufferOffset, &event, size);
+    eventBufferOffset += size;
+    return 0;
+}
+
+int NetworkPushPlayerCanShootEvent(ServerPlayerCanShootEvent event)
+{
+    const size_t capacity = MAX_PACKET_SIZE - sizeof(ServerPacketHeader);
+    const size_t size = sizeof(ServerPlayerCanShootEvent);
+    const size_t need = sizeof(ServerEventHeader) + size;
+    printf("Pushing PlayerCanShootEvent, %d bytes\n", size);
+
+    if (need > capacity || eventBufferOffset + need > capacity)
+        return 1;
+
+    ServerEventHeader eventHeader;
+    eventHeader.type = SERVER_EVENT_PLAYER_CAN_SHOOT;
+    eventHeader.size = size;
+    memcpy(eventBuffer + eventBufferOffset, &eventHeader, sizeof(eventHeader));
+    eventBufferOffset += sizeof(eventHeader);
+
+    memcpy(eventBuffer + eventBufferOffset, &event, size);
+    eventBufferOffset += size;
+    return 0;
+}
+
+int NetworkPushNewEntityEvent(ServerEntityState entity)
+{
+    const size_t capacity = MAX_PACKET_SIZE - sizeof(ServerPacketHeader);
+    const size_t size = sizeof(ServerEntityState);
+    const size_t need = sizeof(ServerEventHeader) + size;
+    printf("Pushing NewEntityEvent, %d bytes\n", size);
+
+    if (need > capacity || eventBufferOffset + need > capacity)
+        return 1;
+
+    ServerEventHeader eventHeader;
+    eventHeader.type = SERVER_EVENT_NEW_ENTITY;
+    eventHeader.size = size;
+    memcpy(eventBuffer + eventBufferOffset, &eventHeader, sizeof(eventHeader));
+    eventBufferOffset += sizeof(eventHeader);
+
+    memcpy(eventBuffer + eventBufferOffset, &entity, size);
     eventBufferOffset += size;
     return 0;
 }
@@ -51,6 +95,7 @@ void NetworkSendEventPacket(Server *server)
     }
 
     int sent;
+    printf("[SERVER]: Broadcasting Event Packets, %d bytes\n", eventBufferOffset);
     for (int i = 0; i < MAX_CLIENTS; i++)
     {
         SOCKET client = server->clients[i];
@@ -73,6 +118,7 @@ void NetworkSendEventPacket(Server *server)
             printf("Warning: not all bytes sent (%d/%d)\n", sent, header.size);
         }
     }
+    NetworkPrepareEventBuffer();
 }
 
 ServerWaveSnapshot waveStateToSend;
@@ -145,7 +191,7 @@ void NetworkSendEntitiesSnapshot(struct Server *server)
         SOCKET client = server->clients[i];
         if (client == INVALID_SOCKET)
             continue;
-        printf("Sending to Client[%d], %d entities\n", i, count);
+        // printf("Sending to Client[%d], %d entities\n", i, count);
         // printf("Sending to Client[%d], Entity[%d], .x=%d, .y=%d\n", i, entity, entities[entity].x, entities[entity].y);
 
         int sent = send(client, buffer, totalSize, 0);

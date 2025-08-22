@@ -23,6 +23,7 @@ void NetworkRecievePacket(Client *client)
     if (recvlen <= 0)
         return; // disconnect or error
 
+    // printf("Received %d bytes, header.size: %d, header.type: %d\n", recvlen, header.size, header.type);
     char buffer[MAX_PACKET_SIZE];
     recvlen = recv(client->socket, buffer, header.size, 0);
     if (recvlen <= 0)
@@ -57,19 +58,36 @@ void NetworkRecievePacket(Client *client)
         size_t offset = 0;
         while (offset < header.size)
         {
+            printf("OFFSET: %d\n", offset);
             ServerEventHeader *eheader = (ServerEventHeader *)(buffer + offset);
             offset += sizeof(ServerEventHeader);
 
+            printf("OFFSET DATA: %d\n", offset);
+
             char *edata = buffer + offset;
             offset += eheader->size;
-
+            printf("EVENT TYPE: %d, SIZE:%d\n", eheader->type, eheader->size);
             switch (eheader->type)
             {
-            case PACKET_ENTITY_DIED:
+            case SERVER_EVENT_ENTITY_DIED:
+            {
                 ServerEntityDiedEvent *event = (ServerEntityDiedEvent *)edata;
-                printf("Entity[%d] died at (%d,%d)\n", event->id, event->deathPosX, event->deathPosY);
+                printf("[SERVER]: Entity[%d] died at (%d,%d)\n", event->id, event->deathPosX, event->deathPosY);
                 GameHandleEntityDiedEvent(event);
-                break;
+            }
+            break;
+            case SERVER_EVENT_PLAYER_CAN_SHOOT:
+            {
+                ServerPlayerCanShootEvent *event = (ServerPlayerCanShootEvent *)edata;
+                GameHandlePlayerCanShootEvent(event);
+            }
+            break;
+            case SERVER_EVENT_NEW_ENTITY:
+            {
+                ServerEntityState *entity = (ServerEntityState *)edata;
+                printf("[SERVER]: New Entity[%d], dx:%f, dy:%f\n", entity->id, entity->vx, entity->vy);
+                GameHandleNewEntityEvent(entity);
+            }
             default:
                 break;
             }

@@ -16,5 +16,7 @@ void NetworkSendAssignedPlayerID(struct Server *server, int clientIndex, uint8_t
 
 void NetworkPrepareEventBuffer();
 int NetworkPushEntityDiedEvent(struct ServerEntityDiedEvent event);
+int NetworkPushPlayerCanShootEvent(struct ServerPlayerCanShootEvent event);
+int NetworkPushNewEntityEvent(ServerEntityState entity);
 void NetworkSendEventPacket(struct Server *server);
 #endif

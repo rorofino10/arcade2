@@ -72,10 +72,12 @@ typedef struct ServerAssignPlayerMessage
     uint8_t playerID;
 } __attribute__((packed)) ServerAssignPlayerMessage;
 
-typedef enum PACKET_SERVER_EVENT_TYPE
+typedef enum SERVER_EVENT_TYPE
 {
-    PACKET_ENTITY_DIED,
-} PACKET_SERVER_EVENT_TYPE;
+    SERVER_EVENT_ENTITY_DIED,
+    SERVER_EVENT_PLAYER_CAN_SHOOT,
+    SERVER_EVENT_NEW_ENTITY,
+} SERVER_EVENT_TYPE;
 
 typedef struct ServerEventHeader
 {
@@ -89,5 +91,10 @@ typedef struct ServerEntityDiedEvent
     int16_t deathPosX;
     int16_t deathPosY;
 } __attribute__((packed)) ServerEntityDiedEvent;
+
+typedef struct ServerPlayerCanShootEvent
+{
+    uint8_t id;
+} __attribute__((packed)) ServerPlayerCanShootEvent;
 
 #endif

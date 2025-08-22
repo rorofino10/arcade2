@@ -54,7 +54,6 @@ void ServerTryEventTick(Server *server)
     {
         elapsedTimeBetweenEventTicks -= timeBetweenEventTicks;
         NetworkSendEventPacket(server);
-        NetworkPrepareEventBuffer();
     }
 }
 
@@ -151,7 +150,6 @@ void ServerTryAcceptConnection(Server *server)
             printf("New client connected: %d\n", i);
             uint8_t playerID = GameAssignPlayerToClient(i);
             NetworkSendAssignedPlayerID(server, i, playerID);
-
             return;
         }
     }
@@ -179,7 +177,7 @@ void ServerHandleClient(Server *server, int fdsIndex)
     recvlen = recv(s, (char *)&header, sizeof(header), 0);
     if (recvlen > 0)
     {
-        printf("Client[%d] sent packet: type: %d, size: %d\n", fdsIndex - 1, header.type, header.size);
+        // printf("Client[%d] sent packet: type: %d, size: %d\n", fdsIndex - 1, header.type, header.size);
     }
     else if (recvlen == 0)
     {
@@ -230,7 +228,7 @@ void ServerHandleClient(Server *server, int fdsIndex)
         case PACKET_INPUT_SHOOT:
             PacketShootEvent *shoot = (PacketShootEvent *)edata;
             ShootBulletInput(fdsIndex - 1, shoot->dx, shoot->dy);
-            printf("Shoot direction= .x=%f, .y=%f\n", shoot->dx, shoot->dy);
+            // printf("Shoot direction= .x=%f, .y=%f\n", shoot->dx, shoot->dy);
             break;
         default:
             break;

@@ -162,6 +162,7 @@ typedef struct
     LIFETIME lifetime;
     LIFETIME powerupSpeedLifetime;
     LIFETIME powerupShootingLifetime;
+    bool canShoot;
     bool isAlive;
     bool isPowerupSpeedActive;
     bool isPowerupShootingActive;
@@ -264,7 +265,7 @@ Vector2 RandomSpawnPosition(Vector2 playerPos)
     return pos;
 }
 
-EntityID SpawnEntity(Vector2 position, Vector2 size, SPEED speed, EntityType type)
+EntityID SpawnClientsideEntity(Vector2 position, Vector2 size, SPEED speed, EntityType type)
 {
     for (EntityID id = 0; id < entitiesCount; id++)
     {
@@ -286,17 +287,50 @@ EntityID SpawnEntity(Vector2 position, Vector2 size, SPEED speed, EntityType typ
     }
     return -1;
 }
+void SpawnServersideEntityAt(EntityID id, Vector2 position, Vector2 size, SPEED speed, EntityType type)
+{
+
+    entities[id] = (Entity){
+        .position = position,
+        .direction = Vector2Zero(),
+        .facing = DEFAULT_ENTITY_FACING,
+        .size = size,
+        .speed = speed,
+        .type = type,
+        .parent = id,
+        .isAlive = true,
+        .lifetime = 1.0f,
+    };
+}
+EntityID SpawnServersideEntity(Vector2 position, Vector2 size, SPEED speed, EntityType type)
+{
+    for (EntityID id = 0; id < entitiesCount; id++)
+    {
+        if (entities[id].isAlive)
+            continue;
+
+        SpawnServersideEntityAt(id, position, size, speed, type);
+        return id;
+    }
+    return -1;
+}
 
 EntityID SpawnClientsideExplosion()
 {
-    EntityID explosionId = SpawnEntity(Vector2Zero(), DEFAULT_ENTITY_SIZE, 0.0f, ENTITY_EXPLOSION);
+    EntityID explosionId = SpawnClientsideEntity(Vector2Zero(), DEFAULT_ENTITY_SIZE, 0.0f, ENTITY_EXPLOSION);
     PlaySound(soundEffects[SOUND_EFFECT_EXPLOSION]);
     ShakeCamera(DEFAULT_SHAKE_DURATION);
     return explosionId;
 }
 EntityID SpawnClientsideBullet()
 {
-    EntityID bulletId = SpawnEntity(Vector2Zero(), DEFAULT_BULLET_SIZE, DEFAULT_BULLET_SPEED, ENTITY_BULLET);
+    EntityID bulletId = SpawnClientsideEntity(Vector2Zero(), DEFAULT_BULLET_SIZE, DEFAULT_BULLET_SPEED, ENTITY_BULLET);
+    clientsideEntities[bulletId].lifetime = DEFAULT_BULLET_LIFETIME;
+    return bulletId;
+}
+EntityID SpawnServersideBullet()
+{
+    EntityID bulletId = SpawnServersideEntity(Vector2Zero(), DEFAULT_BULLET_SIZE, DEFAULT_BULLET_SPEED, ENTITY_BULLET);
     entities[bulletId].lifetime = DEFAULT_BULLET_LIFETIME;
     return bulletId;
 }
@@ -304,8 +338,8 @@ EntityID SpawnClientsideBullet()
 void ShootBullet(EntityID from, Vector2 direction)
 {
     PlaySound(soundEffects[SOUND_EFFECT_BULLET]);
-    EntityID bulletId = SpawnClientsideBullet();
-    Entity *entity = &clientsideEntities[bulletId];
+    EntityID bulletId = SpawnServersideBullet();
+    Entity *entity = &entities[bulletId];
     entity->position = entities[from].position;
     entity->parent = from;
     entity->direction = direction;
@@ -313,13 +347,16 @@ void ShootBullet(EntityID from, Vector2 direction)
 }
 void EntityShootBullet(EntityID entity)
 {
-    if (entities[entity].shootingCooldownRemaining <= 0.0f)
-    {
-        PacketShootEvent sh = {.dx = entities[entity].facing.x, .dy = entities[entity].facing.y};
-        entities[entity].shootingCooldownRemaining = entities[entity].shootingCooldown;
-        ShootBullet(entity, entities[entity].facing);
-        NetworkPushInputEvent(PACKET_INPUT_SHOOT, &sh, sizeof(sh));
-    }
+    if (!entities[entity].canShoot)
+        return;
+
+    entities[entity].shootingCooldownRemaining = entities[entity].shootingCooldown;
+    entities[entity].canShoot = false;
+
+    // ShootBullet(entity, entities[entity].facing);
+
+    PacketShootEvent sh = {.dx = entities[entity].facing.x, .dy = entities[entity].facing.y};
+    NetworkPushInputEvent(PACKET_INPUT_SHOOT, &sh, sizeof(sh));
 }
 
 Rectangle MakeRectangleFromCenter(Vector2 center, Vector2 size)
@@ -370,6 +407,13 @@ void handlePlayerDeath(EntityID entityID)
     gameState = LOST;
 }
 
+/*
+    FUNCTIONS FOR HANDLING SERVER EVENTS
+    FUNCTIONS FOR HANDLING SERVER EVENTS
+    FUNCTIONS FOR HANDLING SERVER EVENTS
+    FUNCTIONS FOR HANDLING SERVER EVENTS
+*/
+
 void GameHandleEntityDiedEvent(ServerEntityDiedEvent *event)
 {
     switch (entities[event->id].type)
@@ -384,6 +428,35 @@ void GameHandleEntityDiedEvent(ServerEntityDiedEvent *event)
     clientsideEntities[explosionId].position = (Vector2){.x = event->deathPosX, .y = event->deathPosY};
     entities[event->id].isAlive = false;
 }
+
+void GameHandlePlayerCanShootEvent(ServerPlayerCanShootEvent *event)
+{
+    entities[event->id].canShoot = true;
+}
+
+void GameHandleNewEntityEvent(ServerEntityState *event)
+{
+    Vector2 size;
+    switch (event->type)
+    {
+    case ENTITY_BULLET:
+        size = DEFAULT_BULLET_SIZE;
+        break;
+    default:
+        size = DEFAULT_ENTITY_SIZE;
+        break;
+    }
+    SpawnServersideEntityAt(event->id, (Vector2){event->x, event->y}, size, event->speed, event->type);
+    entities[event->id].direction.x = event->vx;
+    entities[event->id].direction.y = event->vy;
+}
+
+/*
+    FUNCTIONS FOR HANDLING SERVER EVENTS
+    FUNCTIONS FOR HANDLING SERVER EVENTS
+    FUNCTIONS FOR HANDLING SERVER EVENTS
+    FUNCTIONS FOR HANDLING SERVER EVENTS
+*/
 
 void KillAllEntities()
 {
@@ -508,10 +581,11 @@ void GameUpdateNetworkEntities(ServerEntityState *networkEntity, int count)
             if (networkEntity[i].type != ENTITY_RED_ENEMY)
                 entities[networkEntity[i].id].facing = DEFAULT_ENTITY_FACING;
         }
-
+        // General attributes
         entities[networkEntity[i].id].speed = networkEntity[i].speed;
-        entities[networkEntity[i].id].isAlive = true;
         entities[networkEntity[i].id].type = networkEntity[i].type;
+
+        // Default implementation
         entities[networkEntity[i].id].size = DEFAULT_ENTITY_SIZE;
         entities[networkEntity[i].id].parent = networkEntity->id;
         entities[networkEntity[i].id].lifetime = 1.0f;
@@ -519,8 +593,10 @@ void GameUpdateNetworkEntities(ServerEntityState *networkEntity, int count)
         if (networkEntity[i].type == ENTITY_BULLET)
         {
             entities[networkEntity[i].id].size = DEFAULT_BULLET_SIZE;
-            entities[networkEntity[i].id].lifetime = DEFAULT_BULLET_LIFETIME;
         }
+
+        // Snapshots are only alive entities
+        entities[networkEntity[i].id].isAlive = true;
     }
 }
 void GameUpdateNetworkWave(ServerWaveSnapshot *waveSnapshot)
@@ -537,7 +613,9 @@ void UpdateNetwork(struct Client *client)
         elapsedTimeBetweenSnapshotTicks -= timeBetweenSnapshotTicks;
         PacketMoveEvent mh = {.nx = (int16_t)entities[playerID].position.x, .ny = (int16_t)entities[playerID].position.y};
         if (entities[playerID].direction.x != 0.0f || entities[playerID].direction.y != 0.0f)
+        {
             NetworkPushInputEvent(PACKET_INPUT_MOVE, &mh, sizeof(mh));
+        }
         NetworkSendPacket(client);
         NetworkPrepareBuffer();
         NetworkRecievePacket(client);

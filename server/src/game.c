@@ -131,6 +131,7 @@ typedef struct
     LIFETIME lifetime;
     LIFETIME powerupSpeedLifetime;
     LIFETIME powerupShootingLifetime;
+    bool canShoot;
     bool isAlive;
     bool isPowerupSpeedActive;
     bool isPowerupShootingActive;
@@ -180,6 +181,7 @@ EntityID SpawnEntity(Vector2 position, Vector2 size, SPEED speed, EntityType typ
             .isAlive = true,
             .lifetime = 1.0f,
             .dirty = true,
+            .canShoot = false,
         };
         return id;
     }
@@ -195,6 +197,16 @@ EntityID SpawnPlayer()
     entities[newPlayerID].powerupSpeedLifetime = 0.0f;
     entities[newPlayerID].isPowerupSpeedActive = false;
     entities[newPlayerID].isPowerupShootingActive = false;
+
+    // NetworkPushNewEntityEvent((ServerEntityState){
+    //     .id = newPlayerID,
+    //     .x = entities[newPlayerID].position.x,
+    //     .y = entities[newPlayerID].position.y,
+    //     .vx = entities[newPlayerID].direction.x,
+    //     .vy = entities[newPlayerID].direction.y,
+    //     .speed = entities[newPlayerID].speed,
+    //     .type = ENTITY_PLAYER,
+    // });
     return newPlayerID;
 }
 EntityID SpawnRedEnemy()
@@ -204,6 +216,16 @@ EntityID SpawnRedEnemy()
     waveManager.spawnCooldownRemaining = waveManager.spawnCooldown;
     waveManager.redEnemiesLeftToSpawn--;
     waveManager.redEnemiesRemaining++;
+
+    // NetworkPushNewEntityEvent((ServerEntityState){
+    //     .id = enemyId,
+    //     .x = entities[enemyId].position.x,
+    //     .y = entities[enemyId].position.y,
+    //     .vx = entities[enemyId].direction.x,
+    //     .vy = entities[enemyId].direction.y,
+    //     .speed = entities[enemyId].speed,
+    //     .type = ENTITY_RED_ENEMY,
+    // });
     return enemyId;
 }
 EntityID SpawnNeutral()
@@ -221,6 +243,17 @@ EntityID SpawnBlueEnemy()
     waveManager.spawnCooldownRemaining = waveManager.spawnCooldown;
     waveManager.blueEnemiesLeftToSpawn--;
     waveManager.blueEnemiesRemaining++;
+
+    // NetworkPushNewEntityEvent((ServerEntityState){
+    //     .id = enemyId,
+    //     .x = entities[enemyId].position.x,
+    //     .y = entities[enemyId].position.y,
+    //     .vx = entities[enemyId].direction.x,
+    //     .vy = entities[enemyId].direction.y,
+    //     .speed = entities[enemyId].speed,
+    //     .type = ENTITY_BLUE_ENEMY,
+    // });
+
     return enemyId;
 }
 EntityID SpawnPowerupSpeed()
@@ -236,11 +269,7 @@ EntityID SpawnPowerupShooting()
     EntityID powerupId = SpawnEntity(position, DEFAULT_ENTITY_SIZE, 0.0f, ENTITY_POWERUP_SHOOTING);
     return powerupId;
 }
-EntityID SpawnExplosion()
-{
-    EntityID explosionId = SpawnEntity(Vector2Zero(), DEFAULT_ENTITY_SIZE, 0.0f, ENTITY_EXPLOSION);
-    return explosionId;
-}
+
 EntityID SpawnBullet()
 {
     EntityID bulletId = SpawnEntity(Vector2Zero(), DEFAULT_BULLET_SIZE, DEFAULT_BULLET_SPEED, ENTITY_BULLET);
@@ -250,28 +279,41 @@ EntityID SpawnBullet()
 
 void ShootBullet(EntityID from, Vector2 direction)
 {
+    printf("[GAME]: Shooting Bullet, from[%d]\n", from);
     EntityID bulletId = SpawnBullet();
     entities[bulletId].position = entities[from].position;
     entities[bulletId].parent = from;
     entities[bulletId].direction = direction;
     entities[bulletId].facing = direction;
+    // NetworkPushNewEntityEvent((ServerEntityState){
+    //     .id = bulletId,
+    //     .x = entities[bulletId].position.x,
+    //     .y = entities[bulletId].position.y,
+    //     .vx = entities[bulletId].direction.x,
+    //     .vy = entities[bulletId].direction.y,
+    //     .speed = entities[bulletId].speed,
+    //     .type = ENTITY_BULLET,
+    // });
 }
 void EntityShootBullet(EntityID entity)
 {
-    if (entities[entity].shootingCooldownRemaining <= 0.0f)
-    {
-        entities[entity].shootingCooldownRemaining = entities[entity].shootingCooldown;
-        ShootBullet(entity, entities[entity].facing);
-    }
+    if (!entities[entity].canShoot)
+        return;
+
+    entities[entity].shootingCooldownRemaining = entities[entity].shootingCooldown;
+    entities[entity].canShoot = false;
+
+    ShootBullet(entity, entities[entity].facing);
 }
 
 void ShootBulletInput(int clientIndex, float dx, float dy)
 {
     EntityID playerID = playerIDs[clientIndex];
-    if (entities[playerID].shootingCooldownRemaining <= 0.0f)
+    if (entities[playerID].canShoot)
     {
-        entities[playerID].shootingCooldownRemaining = entities[playerID].shootingCooldown;
         ShootBullet(playerID, (Vector2){dx, dy});
+        entities[playerID].shootingCooldownRemaining = entities[playerID].shootingCooldown;
+        entities[playerID].canShoot = false;
     }
 }
 
@@ -368,7 +410,7 @@ void KillEntity(EntityID entityId)
     default:
         break;
     }
-    NetworkPushEntityDiedEvent((ServerEntityDiedEvent){.id = entityId, .deathPosX = entities[entityId].position.x, .deathPosY = entities[entityId].position.y});
+    // NetworkPushEntityDiedEvent((ServerEntityDiedEvent){.id = entityId, .deathPosX = entities[entityId].position.x, .deathPosY = entities[entityId].position.y});
     // EntityID explosionId = SpawnExplosion();
     // entities[explosionId].position = entities[entityId].position;
     entities[entityId].isAlive = false;
@@ -572,6 +614,11 @@ void GameUpdate(double delta)
         case ENTITY_PLAYER:
             if (entities[i].shootingCooldownRemaining > 0.0f)
                 entities[i].shootingCooldownRemaining -= delta;
+            if (!entities[i].canShoot && entities[i].shootingCooldownRemaining <= 0.0f)
+            {
+                entities[i].canShoot = true;
+                // NetworkPushPlayerCanShootEvent((ServerPlayerCanShootEvent){.id = i});
+            }
             if (entities[i].powerupSpeedLifetime > 0.0f)
                 entities[i].powerupSpeedLifetime -= delta;
             if (entities[i].isPowerupSpeedActive && entities[i].powerupSpeedLifetime <= 0.0f)
