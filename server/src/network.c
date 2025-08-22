@@ -84,15 +84,21 @@ int NetworkPushNewEntityEvent(ServerEntityState entity)
 
 void NetworkSendEventPacket(Server *server)
 {
-    ServerPacketHeader header;
-    header.type = PACKET_SERVER_EVENTS;
-    header.size = eventBufferOffset;
+    char buffer[MAX_PACKET_SIZE];
+    ServerPacketHeader *header = (ServerPacketHeader *)buffer;
 
-    if (header.size <= 0)
+    header->type = PACKET_SERVER_EVENTS;
+    header->size = eventBufferOffset;
+    int totalSize = sizeof(ServerPacketHeader) + header->size;
+
+    if (header->size <= 0)
     {
         // printf("[SERVER] No events to send\n");
         return;
     }
+
+    char *payload = (char *)(buffer + sizeof(ServerPacketHeader));
+    memcpy(payload, eventBuffer, eventBufferOffset);
 
     int sent;
     printf("[SERVER]: Broadcasting Event Packets, %d bytes\n", eventBufferOffset);
@@ -102,23 +108,16 @@ void NetworkSendEventPacket(Server *server)
         if (client == INVALID_SOCKET)
             continue;
 
-        int sent = send(client, (char *)&header, sizeof(header), 0);
-        if (sent == SOCKET_ERROR)
-        {
-            printf("Failed to send header to client[%d]: %d\n", i, WSAGetLastError());
-            continue;
-        }
-        sent = send(client, eventBuffer, header.size, 0);
+        sent = send(client, buffer, totalSize, 0);
         if (sent == SOCKET_ERROR)
         {
             printf("Client[%d]: Buffer send failed: %d\n", i, WSAGetLastError());
         }
-        else if (sent != header.size)
+        else if (sent != totalSize)
         {
-            printf("Warning: not all bytes sent (%d/%d)\n", sent, header.size);
+            printf("Warning: not all bytes sent (%d/%d)\n", sent, totalSize);
         }
     }
-    NetworkPrepareEventBuffer();
 }
 
 ServerWaveSnapshot waveStateToSend;

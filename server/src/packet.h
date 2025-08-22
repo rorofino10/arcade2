@@ -23,19 +23,19 @@ typedef struct
 {
     float dx;
     float dy;
-} PacketShootEvent;
+} ClientInputShootEvent;
 
 typedef struct
 {
     int16_t nx;
     int16_t ny;
-} __attribute__((packed)) PacketMoveEvent;
+} __attribute__((packed)) ClientInputMoveEvent;
 
-typedef enum PACKET_INPUT_EVENT_TYPE
+typedef enum CLIENT_EVENT_TYPE
 {
-    PACKET_INPUT_SHOOT,
-    PACKET_INPUT_MOVE,
-} PACKET_INPUT_EVENT_TYPE;
+    CLIENT_EVENT_INPUT_SHOOT,
+    CLIENT_EVENT_INPUT_MOVE,
+} CLIENT_EVENT_TYPE;
 
 typedef struct
 {

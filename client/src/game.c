@@ -355,8 +355,8 @@ void EntityShootBullet(EntityID entity)
 
     // ShootBullet(entity, entities[entity].facing);
 
-    PacketShootEvent sh = {.dx = entities[entity].facing.x, .dy = entities[entity].facing.y};
-    NetworkPushInputEvent(PACKET_INPUT_SHOOT, &sh, sizeof(sh));
+    ClientInputShootEvent sh = {.dx = entities[entity].facing.x, .dy = entities[entity].facing.y};
+    NetworkPushInputShootEvent(sh);
 }
 
 Rectangle MakeRectangleFromCenter(Vector2 center, Vector2 size)
@@ -509,7 +509,7 @@ void Input(struct Client *client)
     Vector2 mousePositionWorld = GetScreenToWorld2D(GetMousePosition(), camera);
     entities[playerID].facing = Vector2Normalize(Vector2Subtract(mousePositionWorld, entities[playerID].position));
 
-    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) || IsKeyDown(KEY_SPACE))
+    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) || IsKeyPressed(KEY_SPACE))
         EntityShootBullet(playerID);
 }
 
@@ -611,13 +611,14 @@ void UpdateNetwork(struct Client *client)
     while (elapsedTimeBetweenSnapshotTicks >= timeBetweenSnapshotTicks)
     {
         elapsedTimeBetweenSnapshotTicks -= timeBetweenSnapshotTicks;
-        PacketMoveEvent mh = {.nx = (int16_t)entities[playerID].position.x, .ny = (int16_t)entities[playerID].position.y};
         if (entities[playerID].direction.x != 0.0f || entities[playerID].direction.y != 0.0f)
         {
-            NetworkPushInputEvent(PACKET_INPUT_MOVE, &mh, sizeof(mh));
+            ClientInputMoveEvent mh = {.nx = (int16_t)entities[playerID].position.x, .ny = (int16_t)entities[playerID].position.y};
+            NetworkPushInputMoveEvent(mh);
         }
         NetworkSendPacket(client);
         NetworkPrepareBuffer();
+
         NetworkRecievePacket(client);
     }
 }

@@ -10,10 +10,10 @@
 #include "packet.h"
 #include "game.h"
 
-char buffer[MAX_PACKET_SIZE];
-size_t offset = 0;
+char eventBuffer[MAX_PACKET_SIZE];
+size_t eventBufferOffset = 0;
 
-void NetworkPrepareBuffer() { offset = 0; }
+void NetworkPrepareBuffer() { eventBufferOffset = 0; }
 
 void NetworkRecievePacket(Client *client)
 {
@@ -72,20 +72,21 @@ void NetworkRecievePacket(Client *client)
             case SERVER_EVENT_ENTITY_DIED:
             {
                 ServerEntityDiedEvent *event = (ServerEntityDiedEvent *)edata;
-                printf("[SERVER]: Entity[%d] died at (%d,%d)\n", event->id, event->deathPosX, event->deathPosY);
+                printf("[SERVER]: EntityDiedEvent id:[%d] at (%d,%d)\n", event->id, event->deathPosX, event->deathPosY);
                 GameHandleEntityDiedEvent(event);
             }
             break;
             case SERVER_EVENT_PLAYER_CAN_SHOOT:
             {
                 ServerPlayerCanShootEvent *event = (ServerPlayerCanShootEvent *)edata;
+                printf("[SERVER]: PlayerCanShootEvent id:[%d]\n", event->id);
                 GameHandlePlayerCanShootEvent(event);
             }
             break;
             case SERVER_EVENT_NEW_ENTITY:
             {
                 ServerEntityState *entity = (ServerEntityState *)edata;
-                printf("[SERVER]: New Entity[%d], dx:%f, dy:%f\n", entity->id, entity->vx, entity->vy);
+                printf("[SERVER]: NewEntityEvent id:[%d], dx:%f, dy:%f\n", entity->id, entity->vx, entity->vy);
                 GameHandleNewEntityEvent(entity);
             }
             default:
@@ -103,52 +104,147 @@ void NetworkSendPacket(Client *client)
 {
     ClientPacketHeader header;
     header.type = PACKET_INPUT_EVENT;
-    header.size = offset;
+    header.size = eventBufferOffset;
 
     if (header.size <= 0)
         return;
-    int sent;
-    sent = send(client->socket, (char *)&header, sizeof(header), 0);
-    if (sent == SOCKET_ERROR)
-    {
-        printf("Header send failed: %d\n", WSAGetLastError());
-        return;
-    }
-    else if (sent != sizeof(ClientPacketHeader))
-    {
-        printf("Warning: not all bytes sent (%d/%d)\n", sent, sizeof(ClientPacketHeader));
-        return;
-    }
-    // printf("Sent PacketHeader, type: %d, size: %d\n", header.type, sizeof(ClientPacketHeader));
 
-    sent = send(client->socket, buffer, header.size, 0);
+    int totalSize = sizeof(ClientPacketHeader) + header.size;
+
+    char *buffer = (char *)malloc(totalSize);
+    if (!buffer)
+    {
+        printf("Failed to allocate packet buffer\n");
+        return;
+    }
+
+    // copy header and payload into buffer
+    memcpy(buffer, &header, sizeof(ClientPacketHeader));
+    memcpy(buffer + sizeof(ClientPacketHeader), eventBuffer, header.size);
+
+    // send everything in one go
+    int sent = send(client->socket, buffer, totalSize, 0);
     if (sent == SOCKET_ERROR)
     {
-        printf("Buffer send failed: %d\n", WSAGetLastError());
+        printf("Packet send failed: %d\n", WSAGetLastError());
     }
-    else if (sent != header.size)
+    else if (sent != totalSize)
     {
-        printf("Warning: not all bytes sent (%d/%d)\n", sent, header.size);
+        printf("Warning: not all bytes sent (%d/%d)\n", sent, totalSize);
     }
-    // printf("Sent Buffer, size: %d\n", header.size);
+    else
+    {
+        printf("[NETWORK] Sent Packet: type=%d, payload=%d, total=%d\n",
+               header.type, header.size, totalSize);
+    }
+
+    free(buffer);
 }
 
-int NetworkPushInputEvent(PACKET_INPUT_EVENT_TYPE type, void *data, uint16_t size)
+// void NetworkSendPacket(Client *client)
+// {
+//     ClientPacketHeader header;
+//     header.type = PACKET_INPUT_EVENT;
+//     header.size = eventBufferOffset;
+
+//     if (header.size <= 0)
+//         return;
+
+//     int sent;
+//     sent = send(client->socket, (char *)&header, sizeof(header), 0);
+//     if (sent == SOCKET_ERROR)
+//     {
+//         printf("Header send failed: %d\n", WSAGetLastError());
+//         return;
+//     }
+//     else if (sent != sizeof(ClientPacketHeader))
+//     {
+//         printf("Warning: not all bytes sent (%d/%d)\n", sent, sizeof(ClientPacketHeader));
+//         return;
+//     }
+//     printf("[NETWORK] Sent ClientPacketHeader, type: %d, size: %d\n", header.type, sent);
+
+//     // size_t offset = 0;
+//     // int events = 0;
+//     // while (offset < header.size)
+//     // {
+//     //     ClientEventHeader *eheader = (ClientEventHeader *)(eventBuffer + offset);
+//     //     offset += sizeof(ClientEventHeader);
+
+//     //     char *edata = eventBuffer + offset;
+//     //     offset += eheader->size;
+
+//     //     printf("[NETWORK] Event[%d] Header.size: %d, Header.type: %d\n", events, eheader->size, eheader->type);
+//     //     switch (eheader->type)
+//     //     {
+//     //     case CLIENT_EVENT_INPUT_MOVE:
+//     //         ClientInputMoveEvent *move = (ClientInputMoveEvent *)edata;
+//     //         printf("[NETWORK] Parsed EVENT[%d] CLIENT_EVENT_INPUT_MOVE move->nx:%d, move->ny:%d\n", events, move->nx, move->ny);
+//     //         break;
+//     //     case CLIENT_EVENT_INPUT_SHOOT:
+//     //         ClientInputShootEvent *shoot = (ClientInputShootEvent *)edata;
+//     //         printf("[NETWORK] Parsed EVENT[%d] CLIENT_EVENT_INPUT_SHOOT shoot->dx:%f, shoot->dy:%f\n", events, shoot->dx, shoot->dy);
+//     //         break;
+//     //     default:
+//     //         break;
+//     //         events++;
+//     //     }
+//     // }
+//     sent = send(client->socket, eventBuffer, header.size, 0);
+//     if (sent == SOCKET_ERROR)
+//     {
+//         printf("Buffer send failed: %d\n", WSAGetLastError());
+//     }
+//     else if (sent != header.size)
+//     {
+//         printf("Warning: not all bytes sent (%d/%d)\n", sent, header.size);
+//     }
+//     else
+//     {
+//         printf("[NETWORK] Sent EventBuffer, size: %d\n", sent);
+//     }
+// }
+
+int NetworkPushInputMoveEvent(ClientInputMoveEvent event)
 {
     const size_t capacity = MAX_PACKET_SIZE - sizeof(ClientPacketHeader);
-    const size_t need = sizeof(ClientEventHeader) + (size_t)size;
+    const size_t size = sizeof(ClientInputMoveEvent);
+    const size_t need = sizeof(ClientPacketHeader) + size;
+    printf("Pushing ClientInputMoveEvent, %d bytes\n", size);
 
-    if (need > capacity || offset + need > capacity)
+    if (need > capacity || eventBufferOffset + need > capacity)
         return 1;
 
-    ClientEventHeader header;
-    header.type = type;
-    header.size = size;
+    ClientEventHeader eventHeader;
+    eventHeader.type = CLIENT_EVENT_INPUT_MOVE;
+    eventHeader.size = size;
+    memcpy(eventBuffer + eventBufferOffset, &eventHeader, sizeof(eventHeader));
+    eventBufferOffset += sizeof(eventHeader);
 
-    memcpy(buffer + offset, &header, sizeof(header));
-    offset += sizeof(header);
+    memcpy(eventBuffer + eventBufferOffset, &event, size);
+    eventBufferOffset += size;
+    return 0;
+}
 
-    memcpy(buffer + offset, data, size);
-    offset += size;
+int NetworkPushInputShootEvent(ClientInputShootEvent event)
+{
+    const size_t capacity = MAX_PACKET_SIZE - sizeof(ClientPacketHeader);
+    const size_t size = sizeof(ClientInputShootEvent);
+    const size_t need = sizeof(ClientPacketHeader) + size;
+    printf("Pushing ClientInputShootEvent, %d bytes\n", size);
+
+    if (need > capacity || eventBufferOffset + need > capacity)
+        return 1;
+
+    ClientEventHeader eventHeader;
+    eventHeader.type = CLIENT_EVENT_INPUT_SHOOT;
+    eventHeader.size = size;
+    printf("[NETWORK]: Pushing ClientEventHeader type: %d, size: %d\n", eventHeader.type, eventHeader.size);
+    memcpy(eventBuffer + eventBufferOffset, &eventHeader, sizeof(eventHeader));
+    eventBufferOffset += sizeof(eventHeader);
+
+    printf("[NETWORK]: Pushing ClientInputShootEvent dx: %f, dy: %f\n", event.dx, event.dy);
+    memcpy(eventBuffer + eventBufferOffset, &event, size);
+    eventBufferOffset += size;
     return 0;
 }

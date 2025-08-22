@@ -54,6 +54,7 @@ void ServerTryEventTick(Server *server)
     {
         elapsedTimeBetweenEventTicks -= timeBetweenEventTicks;
         NetworkSendEventPacket(server);
+        NetworkPrepareEventBuffer();
     }
 }
 
@@ -175,9 +176,10 @@ void ServerHandleClient(Server *server, int fdsIndex)
     SOCKET s = server->fds[fdsIndex].fd;
     int recvlen;
     recvlen = recv(s, (char *)&header, sizeof(header), 0);
+
     if (recvlen > 0)
     {
-        // printf("Client[%d] sent packet: type: %d, size: %d\n", fdsIndex - 1, header.type, header.size);
+        printf("Client[%d] sent packet: type: %d, size: %d\n", fdsIndex - 1, header.type, header.size);
     }
     else if (recvlen == 0)
     {
@@ -210,6 +212,7 @@ void ServerHandleClient(Server *server, int fdsIndex)
         return;
     recvlen = recv(s, buffer, header.size, 0);
     size_t offset = 0;
+    int events = 0;
     while (offset < header.size)
     {
         ClientEventHeader *eheader = (ClientEventHeader *)(buffer + offset);
@@ -218,17 +221,19 @@ void ServerHandleClient(Server *server, int fdsIndex)
         char *edata = buffer + offset;
         offset += eheader->size;
 
+        printf("[NETWORK] Event[%d] Header.size: %d, Header.type: %d\n", events, eheader->size, eheader->type);
+        events++;
         switch (eheader->type)
         {
-        case PACKET_INPUT_MOVE:
-            PacketMoveEvent *move = (PacketMoveEvent *)edata;
+        case CLIENT_EVENT_INPUT_MOVE:
+            ClientInputMoveEvent *move = (ClientInputMoveEvent *)edata;
             UpdatePlayerPosition(fdsIndex - 1, move->nx, move->ny);
-            printf("Move nx=%d ny=%d\n", move->nx, move->ny);
+            // printf("Move nx=%d ny=%d\n", move->nx, move->ny);
             break;
-        case PACKET_INPUT_SHOOT:
-            PacketShootEvent *shoot = (PacketShootEvent *)edata;
+        case CLIENT_EVENT_INPUT_SHOOT:
+            ClientInputShootEvent *shoot = (ClientInputShootEvent *)edata;
             ShootBulletInput(fdsIndex - 1, shoot->dx, shoot->dy);
-            // printf("Shoot direction= .x=%f, .y=%f\n", shoot->dx, shoot->dy);
+            printf("Client[%d] ShootEvent\n", fdsIndex - 1);
             break;
         default:
             break;
