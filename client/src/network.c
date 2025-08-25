@@ -56,17 +56,19 @@ void NetworkRecievePacket(Client *client)
         break;
     case PACKET_SERVER_EVENTS:
         size_t offset = 0;
+        printf("[NETWORK]: SERVER_EVENT, Last Sequence: %d\n", header.lastSequence);
         while (offset < header.size)
         {
-            printf("OFFSET: %d\n", offset);
+            // printf("OFFSET: %d\n", offset);
+            GameResetClientsideBullets(header.lastSequence);
             ServerEventHeader *eheader = (ServerEventHeader *)(buffer + offset);
             offset += sizeof(ServerEventHeader);
 
-            printf("OFFSET DATA: %d\n", offset);
+            // printf("OFFSET DATA: %d\n", offset);
 
             char *edata = buffer + offset;
             offset += eheader->size;
-            printf("EVENT TYPE: %d, SIZE:%d\n", eheader->type, eheader->size);
+            // printf("EVENT TYPE: %d, SIZE:%d\n", eheader->type, eheader->size);
             switch (eheader->type)
             {
             case SERVER_EVENT_ENTITY_DIED:
@@ -179,7 +181,7 @@ int NetworkPushInputShootEvent(ClientInputShootEvent event)
     memcpy(eventBuffer + eventBufferOffset, &eventHeader, sizeof(eventHeader));
     eventBufferOffset += sizeof(eventHeader);
 
-    printf("[NETWORK]: Pushing ClientInputShootEvent dx: %f, dy: %f\n", event.dx, event.dy);
+    printf("[NETWORK]: Pushing ClientInputShootEvent dx: %f, dy: %f, sequence: %d\n", event.dx, event.dy, event.bulletSequence);
     memcpy(eventBuffer + eventBufferOffset, &event, size);
     eventBufferOffset += size;
     return 0;

@@ -17,4 +17,5 @@ void GameUpdateNetworkWave(struct ServerWaveSnapshot *waveSnapshot);
 void GameHandleEntityDiedEvent(struct ServerEntityDiedEvent *event);
 void GameHandlePlayerCanShootEvent(struct ServerPlayerCanShootEvent *event);
 void GameHandleNewEntityEvent(struct ServerEntityState *event);
+void GameResetClientsideBullets(uint32_t sequence);
 #endif

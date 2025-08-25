@@ -9,8 +9,6 @@
 #include "game.h"
 #include "network.h"
 
-#define MAX_PLAYERS 2
-
 typedef uint8_t EntityID;
 typedef float _float32_t;
 typedef float _float16_t;
@@ -136,11 +134,13 @@ typedef struct
     bool isPowerupSpeedActive;
     bool isPowerupShootingActive;
     bool dirty;
+    uint32_t sequence;
 } Entity;
 
 const EntityID entitiesCount = UINT8_MAX - 1;
 GameState gameState = PLAYING;
 EntityID playerIDs[MAX_PLAYERS] = {-1};
+uint8_t lastReceivedSequence[MAX_PLAYERS] = {0};
 Entity *entities = NULL;
 
 #define FOR_EACH_ALIVE_ENTITY(i)                 \
@@ -306,7 +306,12 @@ void EntityShootBullet(EntityID entity)
     ShootBullet(entity, entities[entity].facing);
 }
 
-void ShootBulletInput(int clientIndex, float dx, float dy)
+void GameUpdateLastReceivedBulletSequence(int clientIndex, uint32_t sequence)
+{
+    lastReceivedSequence[clientIndex] = (lastReceivedSequence[clientIndex] > sequence) ? lastReceivedSequence[clientIndex] : sequence;
+}
+
+void ShootBulletInput(int clientIndex, float dx, float dy, uint32_t sequence)
 {
     EntityID playerID = playerIDs[clientIndex];
     if (entities[playerID].canShoot)
@@ -317,6 +322,7 @@ void ShootBulletInput(int clientIndex, float dx, float dy)
         entities[playerID].shootingCooldownRemaining = entities[playerID].shootingCooldown;
         entities[playerID].canShoot = false;
     }
+    GameUpdateLastReceivedBulletSequence(clientIndex, sequence);
 }
 
 Rectangle MakeRectangleFromCenter(Vector2 center, Vector2 size)

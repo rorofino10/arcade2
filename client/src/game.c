@@ -166,6 +166,7 @@ typedef struct
     bool isAlive;
     bool isPowerupSpeedActive;
     bool isPowerupShootingActive;
+    uint32_t bulletSequence;
 } Entity;
 
 const EntityID entitiesCount = UINT8_MAX - 1;
@@ -173,7 +174,7 @@ EntityID playerID = 0;
 Vector2 prevPlayerPosition = (Vector2){0};
 Entity *entities = NULL;
 Entity *clientsideEntities = NULL;
-
+uint32_t lastBulletSequence = 0;
 /*
 [ASSETS] - DEFINITIONS - LOAD - UNLOAD
 [ASSETS] - DEFINITIONS - LOAD - UNLOAD
@@ -326,6 +327,7 @@ EntityID SpawnClientsideBullet()
 {
     EntityID bulletId = SpawnClientsideEntity(Vector2Zero(), DEFAULT_BULLET_SIZE, DEFAULT_BULLET_SPEED, ENTITY_BULLET);
     clientsideEntities[bulletId].lifetime = DEFAULT_BULLET_LIFETIME;
+    clientsideEntities[bulletId].bulletSequence = lastBulletSequence++;
     return bulletId;
 }
 EntityID SpawnServersideBullet()
@@ -335,15 +337,16 @@ EntityID SpawnServersideBullet()
     return bulletId;
 }
 
-void ShootBullet(EntityID from, Vector2 direction)
+EntityID ShootBullet(EntityID from, Vector2 direction)
 {
     PlaySound(soundEffects[SOUND_EFFECT_BULLET]);
-    EntityID bulletId = SpawnServersideBullet();
-    Entity *entity = &entities[bulletId];
+    EntityID bulletId = SpawnClientsideBullet();
+    Entity *entity = &clientsideEntities[bulletId];
     entity->position = entities[from].position;
     entity->parent = from;
     entity->direction = direction;
     entity->facing = direction;
+    return bulletId;
 }
 void EntityShootBullet(EntityID entity)
 {
@@ -353,9 +356,9 @@ void EntityShootBullet(EntityID entity)
     entities[entity].shootingCooldownRemaining = entities[entity].shootingCooldown;
     entities[entity].canShoot = false;
 
-    // ShootBullet(entity, entities[entity].facing);
+    EntityID bulletId = ShootBullet(entity, entities[entity].facing);
 
-    ClientInputShootEvent sh = {.dx = entities[entity].facing.x, .dy = entities[entity].facing.y};
+    ClientInputShootEvent sh = {.dx = entities[entity].facing.x, .dy = entities[entity].facing.y, .bulletSequence = clientsideEntities[bulletId].bulletSequence};
     NetworkPushInputShootEvent(sh);
 }
 
@@ -432,6 +435,18 @@ void GameHandleEntityDiedEvent(ServerEntityDiedEvent *event)
 void GameHandlePlayerCanShootEvent(ServerPlayerCanShootEvent *event)
 {
     entities[event->id].canShoot = true;
+}
+
+void GameResetClientsideBullets(uint32_t sequence)
+{
+    FOR_EACH_ALIVE_CLIENTSIDEENTITY(i)
+    {
+        Entity *entity = &clientsideEntities[i];
+        if (entity->type != ENTITY_BULLET)
+            continue;
+        if (entity->bulletSequence <= sequence)
+            entity->isAlive = false;
+    }
 }
 
 void GameHandleNewEntityEvent(ServerEntityState *event)
@@ -593,6 +608,7 @@ void GameUpdateNetworkEntities(ServerEntityState *networkEntity, int count)
         if (networkEntity[i].type == ENTITY_BULLET)
         {
             entities[networkEntity[i].id].size = DEFAULT_BULLET_SIZE;
+            entities[networkEntity[i].id].facing = entities[networkEntity[i].id].direction;
         }
 
         // Snapshots are only alive entities
@@ -636,7 +652,6 @@ void UpdateEntities()
         {
         case ENTITY_RED_ENEMY:
             Vector2 distance = Vector2Normalize(Vector2Subtract(entities[playerID].position, entities[i].position));
-            entities[i].direction = distance;
             entities[i].facing = distance;
             break;
         case ENTITY_NEUTRAL:

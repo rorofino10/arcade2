@@ -18,5 +18,6 @@ void NetworkPrepareEventBuffer();
 int NetworkPushEntityDiedEvent(struct ServerEntityDiedEvent event);
 int NetworkPushPlayerCanShootEvent(struct ServerPlayerCanShootEvent event);
 int NetworkPushNewEntityEvent(ServerEntityState entity);
+int NetworkPushBulletSpawnEvent(ServerBulletSpawnEvent event);
 void NetworkSendEventPacket(struct Server *server);
 #endif

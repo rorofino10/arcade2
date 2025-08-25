@@ -23,6 +23,7 @@ typedef struct
 {
     float dx;
     float dy;
+    uint32_t bulletSequence;
 } ClientInputShootEvent;
 
 typedef struct
@@ -47,6 +48,7 @@ typedef struct
 {
     uint8_t type;
     uint16_t size;
+    uint32_t lastSequence;
 } __attribute__((packed)) ServerPacketHeader;
 
 // sizeof(ServerEntityState)=16
@@ -58,6 +60,16 @@ typedef struct ServerEntityState
     uint8_t type;
     uint16_t speed;
 } __attribute__((packed)) ServerEntityState;
+
+// sizeof(ServerEntityState)=17
+typedef struct ServerBulletSpawnEvent
+{
+    uint8_t id;
+    int16_t x, y;
+    float dx, dy;
+    uint32_t sequence;
+    uint16_t speed;
+} __attribute__((packed)) ServerBulletSpawnEvent;
 
 // sizeof(ServerWaveSnapshot)=3
 typedef struct ServerWaveSnapshot
@@ -77,6 +89,7 @@ typedef enum SERVER_EVENT_TYPE
     SERVER_EVENT_ENTITY_DIED,
     SERVER_EVENT_PLAYER_CAN_SHOOT,
     SERVER_EVENT_NEW_ENTITY,
+    SERVER_EVENT_BULLET_SPAWN,
 } SERVER_EVENT_TYPE;
 
 typedef struct ServerEventHeader

@@ -18,6 +18,27 @@ size_t eventBufferOffset = 0;
 
 void NetworkPrepareEventBuffer() { eventBufferOffset = 0; }
 
+int NetworkPushBulletSpawnEvent(ServerBulletSpawnEvent event)
+{
+    const size_t capacity = MAX_PACKET_SIZE - sizeof(ServerPacketHeader);
+    const size_t size = sizeof(ServerBulletSpawnEvent);
+    const size_t need = sizeof(ServerEventHeader) + size;
+    printf("Pushing BulletSpawnEvent, %d bytes\n", size);
+
+    if (need > capacity || eventBufferOffset + need > capacity)
+        return 1;
+
+    ServerEventHeader eventHeader;
+    eventHeader.type = SERVER_EVENT_BULLET_SPAWN;
+    eventHeader.size = size;
+    memcpy(eventBuffer + eventBufferOffset, &eventHeader, sizeof(eventHeader));
+    eventBufferOffset += sizeof(eventHeader);
+
+    memcpy(eventBuffer + eventBufferOffset, &event, size);
+    eventBufferOffset += size;
+    return 0;
+}
+
 int NetworkPushEntityDiedEvent(ServerEntityDiedEvent event)
 {
 
@@ -107,7 +128,7 @@ void NetworkSendEventPacket(Server *server)
         SOCKET client = server->clients[i];
         if (client == INVALID_SOCKET)
             continue;
-
+        header->lastSequence = lastReceivedSequence[i];
         sent = send(client, buffer, totalSize, 0);
         if (sent == SOCKET_ERROR)
         {
