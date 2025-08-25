@@ -101,6 +101,7 @@ typedef enum SERVER_EVENT_TYPE
     SERVER_EVENT_PLAYER_CAN_SHOOT,
     SERVER_EVENT_NEW_ENTITY,
     SERVER_EVENT_BULLET_SPAWN,
+    SERVER_EVENT_POWERUP,
     SERVER_DELTA_ENTITY_FACING,
 } SERVER_EVENT_TYPE;
 
@@ -116,6 +117,12 @@ typedef struct ServerEntityDiedEvent
     int16_t deathPosX;
     int16_t deathPosY;
 } __attribute__((packed)) ServerEntityDiedEvent;
+
+typedef struct ServerPowerupEvent
+{
+    uint8_t type;
+    uint8_t picker;
+} __attribute__((packed)) ServerPowerupEvent;
 
 typedef struct ServerPlayerCanShootEvent
 {

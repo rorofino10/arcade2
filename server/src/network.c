@@ -102,6 +102,27 @@ int NetworkPushNewEntityEvent(ServerEntityState entity)
     eventBufferOffset += size;
     return 0;
 }
+
+int NetworkPushPowerupEvent(ServerPowerupEvent event)
+{
+    const size_t capacity = MAX_PACKET_SIZE - sizeof(ServerPacketHeader);
+    const size_t size = sizeof(ServerPowerupEvent);
+    const size_t need = sizeof(ServerEventHeader) + size;
+    printf("Pushing PowerupEvent, %d bytes\n", size);
+
+    if (need > capacity || eventBufferOffset + need > capacity)
+        return 1;
+
+    ServerEventHeader eventHeader;
+    eventHeader.type = SERVER_EVENT_POWERUP;
+    eventHeader.size = size;
+    memcpy(eventBuffer + eventBufferOffset, &eventHeader, sizeof(eventHeader));
+    eventBufferOffset += sizeof(eventHeader);
+
+    memcpy(eventBuffer + eventBufferOffset, &event, size);
+    eventBufferOffset += size;
+    return 0;
+}
 int NetworkPushEntityFacingDelta(ServerEntityFacingDelta delta)
 {
     const size_t capacity = MAX_PACKET_SIZE - sizeof(ServerPacketHeader);

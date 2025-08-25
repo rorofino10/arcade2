@@ -88,6 +88,13 @@ void NetworkRecievePacket(Client *client)
                 GameHandleNewEntityEvent(entity);
             }
             break;
+            case SERVER_EVENT_POWERUP:
+            {
+                ServerPowerupEvent *event = (ServerPowerupEvent *)edata;
+                printf("[SERVER]: PowerupEvent\n");
+                GameHandlePowerupEvent(event);
+            }
+            break;
             case SERVER_DELTA_ENTITY_FACING:
             {
                 ServerEntityFacingDelta *delta = (ServerEntityFacingDelta *)edata;

@@ -363,6 +363,7 @@ void CheckWaveEnded()
 
 void ApplyPowerupSpeed(EntityID entityId, EntityID powerupId)
 {
+    NetworkPushPowerupEvent((ServerPowerupEvent){.type = ENTITY_POWERUP_SPEED, .picker = entityId});
     entities[entityId].speed *= 3.0f;
     entities[entityId].powerupSpeedLifetime = DEFAULT_POWERUP_SPEED_LIFETIME;
     entities[entityId].isPowerupSpeedActive = true;
@@ -371,6 +372,7 @@ void ApplyPowerupSpeed(EntityID entityId, EntityID powerupId)
 
 void ApplyPowerupShooting(EntityID entityId, EntityID powerupId)
 {
+    NetworkPushPowerupEvent((ServerPowerupEvent){.type = ENTITY_POWERUP_SHOOTING, .picker = entityId});
     entities[entityId].shootingCooldown /= 3.0f;
     entities[entityId].powerupShootingLifetime = DEFAULT_POWERUP_SHOOTING_LIFETIME;
     entities[entityId].isPowerupShootingActive = true;

@@ -371,12 +371,12 @@ Rectangle MakeRectangleFromCenter(Vector2 center, Vector2 size)
     return rect;
 }
 
-void ApplyPowerupSpeed(EntityID entityId, EntityID powerupId)
+void GameHandlePowerupSpeed()
 {
     PlaySound(soundEffects[SOUND_EFFECT_POWERUP]);
 }
 
-void ApplyPowerupShooting(EntityID entityId, EntityID powerupId)
+void GameHandlePowerupShooting()
 {
     PlaySound(soundEffects[SOUND_EFFECT_POWERUP]);
 }
@@ -408,6 +408,20 @@ void GameHandleEntityDiedEvent(ServerEntityDiedEvent *event)
     EntityID explosionId = SpawnClientsideExplosion();
     clientsideEntities[explosionId].position = (Vector2){.x = event->deathPosX, .y = event->deathPosY};
     entities[event->id].isAlive = false;
+}
+
+void GameHandlePowerupEvent(ServerPowerupEvent *event)
+{
+    switch (event->type)
+    {
+    case ENTITY_POWERUP_SHOOTING:
+        GameHandlePowerupShooting();
+        break;
+    case ENTITY_POWERUP_SPEED:
+        GameHandlePowerupSpeed();
+    default:
+        break;
+    }
 }
 
 void GameHandlePlayerCanShootEvent(ServerPlayerCanShootEvent *event)

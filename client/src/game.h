@@ -10,6 +10,7 @@ struct ServerEntityDiedEvent;
 struct ServerPlayerCanShootEvent;
 struct ServerEntityState;
 struct ServerEntityFacingDelta;
+struct ServerPowerupEvent;
 
 void GameRun(struct Client *client);
 
@@ -20,6 +21,7 @@ void GameUpdateNetworkWave(struct ServerWaveSnapshot *waveSnapshot);
 void GameHandleEntityDiedEvent(struct ServerEntityDiedEvent *event);
 void GameHandlePlayerCanShootEvent(struct ServerPlayerCanShootEvent *event);
 void GameHandleNewEntityEvent(struct ServerEntityState *event);
+void GameHandlePowerupEvent(struct ServerPowerupEvent *event);
 
 void GameHandleEntityFacingDelta(struct ServerEntityFacingDelta *delta);
 
