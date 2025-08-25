@@ -53,6 +53,8 @@ void ServerTryEventTick(Server *server)
     while (elapsedTimeBetweenEventTicks >= timeBetweenEventTicks)
     {
         elapsedTimeBetweenEventTicks -= timeBetweenEventTicks;
+
+        GamePushEntityDeltas();
         NetworkSendEventPacket(server);
         NetworkPrepareEventBuffer();
     }
@@ -175,17 +177,18 @@ void ServerHandleClient(Server *server, int fdsIndex)
     ClientPacketHeader header;
     SOCKET s = server->fds[fdsIndex].fd;
     int recvlen;
+    int clientIndex = fdsIndex - 1;
     recvlen = recv(s, (char *)&header, sizeof(header), 0);
 
     if (recvlen > 0)
     {
-        printf("Client[%d] sent packet: type: %d, size: %d\n", fdsIndex - 1, header.type, header.size);
+        printf("Client[%d] sent packet: type: %d, size: %d\n", clientIndex, header.type, header.size);
     }
     else if (recvlen == 0)
     {
-        printf("Client[%d] disconnected\n", fdsIndex - 1);
+        printf("Client[%d] disconnected\n", clientIndex);
         closesocket(s);
-        server->clients[fdsIndex - 1] = INVALID_SOCKET;
+        server->clients[clientIndex] = INVALID_SOCKET;
         server->fds[fdsIndex] = server->fds[server->nfds - 1];
         server->nfds--;
         return;
@@ -199,9 +202,9 @@ void ServerHandleClient(Server *server, int fdsIndex)
         }
         else
         {
-            printf("Client[%d] disconnected, error %d\n", fdsIndex - 1, err);
+            printf("Client[%d] disconnected, error %d\n", clientIndex, err);
             closesocket(s);
-            server->clients[fdsIndex - 1] = INVALID_SOCKET;
+            server->clients[clientIndex] = INVALID_SOCKET;
             server->fds[fdsIndex] = server->fds[server->nfds - 1];
             server->nfds--;
             return;
@@ -225,15 +228,19 @@ void ServerHandleClient(Server *server, int fdsIndex)
         events++;
         switch (eheader->type)
         {
-        case CLIENT_EVENT_INPUT_MOVE:
-            ClientInputMoveEvent *move = (ClientInputMoveEvent *)edata;
-            UpdatePlayerPosition(fdsIndex - 1, move->nx, move->ny);
+        case CLIENT_EVENT_INPUT_AUTHORATIVE_MOVE:
+            ClientInputAuthorativeMoveEvent *move = (ClientInputAuthorativeMoveEvent *)edata;
+            UpdatePlayerPosition(clientIndex, move->nx, move->ny);
             // printf("Move nx=%d ny=%d\n", move->nx, move->ny);
+            break;
+        case CLIENT_EVENT_INPUT_MOVE:
+            ClientInputEvent *event = (ClientInputEvent *)edata;
+            GameApplyPlayerMovementInput(clientIndex, event);
             break;
         case CLIENT_EVENT_INPUT_SHOOT:
             ClientInputShootEvent *shoot = (ClientInputShootEvent *)edata;
-            ShootBulletInput(fdsIndex - 1, shoot->dx, shoot->dy, shoot->bulletSequence);
-            printf("Client[%d] ShootEvent, sequence %d\n", fdsIndex - 1, shoot->bulletSequence);
+            ShootBulletInput(clientIndex, shoot->dx, shoot->dy, shoot->bulletSequence);
+            printf("Client[%d] ShootEvent, sequence %d\n", clientIndex, shoot->bulletSequence);
             break;
         default:
             break;

@@ -140,7 +140,8 @@ typedef struct
 const EntityID entitiesCount = UINT8_MAX - 1;
 GameState gameState = PLAYING;
 EntityID playerIDs[MAX_PLAYERS] = {-1};
-uint8_t lastReceivedSequence[MAX_PLAYERS] = {0};
+uint32_t lastProcessedBullet[MAX_PLAYERS] = {0};
+uint32_t lastProcessedMovementInput[MAX_PLAYERS] = {0};
 Entity *entities = NULL;
 
 #define FOR_EACH_ALIVE_ENTITY(i)                 \
@@ -308,7 +309,7 @@ void EntityShootBullet(EntityID entity)
 
 void GameUpdateLastReceivedBulletSequence(int clientIndex, uint32_t sequence)
 {
-    lastReceivedSequence[clientIndex] = (lastReceivedSequence[clientIndex] > sequence) ? lastReceivedSequence[clientIndex] : sequence;
+    lastProcessedBullet[clientIndex] = (lastProcessedBullet[clientIndex] > sequence) ? lastProcessedBullet[clientIndex] : sequence;
 }
 
 void ShootBulletInput(int clientIndex, float dx, float dy, uint32_t sequence)
@@ -339,6 +340,7 @@ void GenerateWave()
 {
     SpawnPowerupShooting();
     SpawnPowerupSpeed();
+    SpawnNeutral();
     waveManager.isWaveInProgress = true;
     waveManager.waveRefreshCooldownRemaining = waveManager.waveRefreshCooldown;
 
@@ -538,6 +540,35 @@ void UpdateNetworkWave()
     NetworkSetWaveState(waveState);
 }
 
+void GamePushEntityDeltas()
+{
+    FOR_EACH_ALIVE_ENTITY(id)
+    {
+        Entity *entity = &entities[id];
+        if (entity->type != ENTITY_PLAYER || !entity->dirty)
+            continue;
+        NetworkPushEntityFacingDelta((ServerEntityFacingDelta){
+            .id = id,
+            .fx = entity->facing.x,
+            .fy = entity->facing.y,
+            .x = entity->position.x,
+            .y = entity->position.y,
+        });
+        entity->dirty = false;
+    }
+}
+
+void GameApplyPlayerMovementInput(int clientIndex, ClientInputEvent *input)
+{
+    EntityID playerID = playerIDs[clientIndex];
+    Vector2 newPos = Vector2Add(entities[playerID].position, Vector2Scale((Vector2){input->dx, input->dy}, entities[playerID].speed * input->dt));
+    if (Vector2DistanceSqr(newPos, Vector2Zero()) <= (worldSize * worldSize))
+        entities[playerID].position = newPos;
+    lastProcessedMovementInput[clientIndex] = input->sequence;
+    entities[playerID].facing = (Vector2){input->fx, input->fy};
+    entities[playerID].dirty = true;
+}
+
 void UpdatePlayerPosition(int clientIndex, int16_t nx, int16_t ny)
 {
     EntityID playerID = playerIDs[clientIndex];
@@ -643,16 +674,21 @@ void GameUpdate(double delta)
         case ENTITY_NEUTRAL:
             if (entities[i].shootingCooldownRemaining > 0.0f)
                 entities[i].shootingCooldownRemaining -= delta;
+            if (!entities[i].canShoot && entities[i].shootingCooldownRemaining <= 0.0f)
+            {
+                entities[i].canShoot = true;
+            }
             FOR_EACH_ALIVE_ENTITY(target)
             {
                 if (entities[target].type != ENTITY_RED_ENEMY)
                     continue;
-                if (Vector2Distance(entities[i].position, entities[target].position) < NEUTRAL_SHOOT_RADIUS)
+                if (Vector2DistanceSqr(entities[i].position, entities[target].position) < NEUTRAL_SHOOT_RADIUS * NEUTRAL_SHOOT_RADIUS)
                 {
                     Vector2 neutralFacing = Vector2Normalize(Vector2Subtract(entities[target].position, entities[i].position));
 
                     entities[i].facing = neutralFacing;
                     EntityShootBullet(i);
+                    break;
                 }
             }
             break;

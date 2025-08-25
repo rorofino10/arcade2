@@ -30,11 +30,21 @@ typedef struct
 {
     int16_t nx;
     int16_t ny;
-} __attribute__((packed)) ClientInputMoveEvent;
+} __attribute__((packed)) ClientInputAuthorativeMoveEvent;
+
+typedef struct ClientInputEvent
+{
+    uint32_t sequence;
+    float dx;
+    float dy;
+    float fx, fy;
+    float dt;
+} __attribute__((packed)) ClientInputEvent;
 
 typedef enum CLIENT_EVENT_TYPE
 {
     CLIENT_EVENT_INPUT_SHOOT,
+    CLIENT_EVENT_INPUT_AUTHORATIVE_MOVE,
     CLIENT_EVENT_INPUT_MOVE,
 } CLIENT_EVENT_TYPE;
 
@@ -48,7 +58,8 @@ typedef struct
 {
     uint8_t type;
     uint16_t size;
-    uint32_t lastSequence;
+    uint32_t lastProcessedBullet;
+    uint32_t lastProcessedMovementInput;
 } __attribute__((packed)) ServerPacketHeader;
 
 // sizeof(ServerEntityState)=16
@@ -90,6 +101,7 @@ typedef enum SERVER_EVENT_TYPE
     SERVER_EVENT_PLAYER_CAN_SHOOT,
     SERVER_EVENT_NEW_ENTITY,
     SERVER_EVENT_BULLET_SPAWN,
+    SERVER_DELTA_ENTITY_FACING,
 } SERVER_EVENT_TYPE;
 
 typedef struct ServerEventHeader
@@ -109,5 +121,12 @@ typedef struct ServerPlayerCanShootEvent
 {
     uint8_t id;
 } __attribute__((packed)) ServerPlayerCanShootEvent;
+
+typedef struct ServerEntityFacingDelta
+{
+    uint8_t id;
+    float fx, fy;
+    float x, y;
+} __attribute__((packed)) ServerEntityFacingDelta;
 
 #endif

@@ -9,13 +9,20 @@ struct ServerWaveSnapshot;
 struct ServerEntityDiedEvent;
 struct ServerPlayerCanShootEvent;
 struct ServerEntityState;
+struct ServerEntityFacingDelta;
 
 void GameRun(struct Client *client);
+
 void GameUpdatePlayerID(uint8_t newPlayerID);
 void GameUpdateNetworkEntities(struct ServerEntityState *networkEntity, int count);
 void GameUpdateNetworkWave(struct ServerWaveSnapshot *waveSnapshot);
+
 void GameHandleEntityDiedEvent(struct ServerEntityDiedEvent *event);
 void GameHandlePlayerCanShootEvent(struct ServerPlayerCanShootEvent *event);
 void GameHandleNewEntityEvent(struct ServerEntityState *event);
+
+void GameHandleEntityFacingDelta(struct ServerEntityFacingDelta *delta);
+
 void GameResetClientsideBullets(uint32_t sequence);
+void GameReconciliatePlayerPosition(uint32_t serverLastProcessedInput);
 #endif

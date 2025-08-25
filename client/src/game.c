@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "game.h"
 #include "network.h"
@@ -22,13 +23,8 @@ const char *gameTitle = "Game Title";
 
 const _Float16 BLUE_ENEMY_BULLETS = 6.0f;
 const _Float16 FULL_CIRCLE = 360.0f;
-const SPEED DEFAULT_PLAYER_SPEED = 100.0f;
-const SPEED DEFAULT_ENEMY_SPEED = 40.0f;
 const SPEED DEFAULT_BULLET_SPEED = 500.0f;
-const COOLDOWN DEFAULT_SHOOTING_COOLDOWN = 0.5f;
 const LIFETIME DEFAULT_BULLET_LIFETIME = 2.0f;
-const LIFETIME DEFAULT_POWERUP_SPEED_LIFETIME = 5.0f;
-const LIFETIME DEFAULT_POWERUP_SHOOTING_LIFETIME = 2.0f;
 const Vector2 DEFAULT_ENTITY_SIZE = (Vector2){50, 50};
 const Vector2 DEFAULT_ENTITY_FACING = (Vector2){1, 0};
 const Vector2 DEFAULT_BULLET_SIZE = (Vector2){11, 5};
@@ -57,8 +53,6 @@ typedef struct WaveManager
     COOLDOWN spawnCooldownRemaining;
 
     // Red Enemies
-    SPEED redEnemiesSpeedIncrease;
-    SPEED redEnemiesSpeed;
     EntityID redEnemiesIncrease;
     EntityID redEnemiesToSpawn;
     EntityID redEnemiesLeftToSpawn;
@@ -84,8 +78,6 @@ WaveManager waveManager = {
 
     // Red Enemies
     .redEnemiesIncrease = DEFAULT_REDENEMIES_INCREASE,
-    .redEnemiesSpeedIncrease = DEFAULT_REDENEMIES_SPEED_INCREASE,
-    .redEnemiesSpeed = DEFAULT_ENEMY_SPEED,
     .redEnemiesToSpawn = 0,
     .redEnemiesLeftToSpawn = 0,
     .redEnemiesRemaining = 0,
@@ -175,6 +167,13 @@ Vector2 prevPlayerPosition = (Vector2){0};
 Entity *entities = NULL;
 Entity *clientsideEntities = NULL;
 uint32_t lastBulletSequence = 0;
+uint32_t lastInputSequence = 0;
+Vector2 prevFacing = DEFAULT_ENTITY_FACING;
+Vector2 prevDir = (Vector2){0, 0};
+
+ClientInputEvent pendingInputs[128];
+int pendingInputCount = 0;
+
 /*
 [ASSETS] - DEFINITIONS - LOAD - UNLOAD
 [ASSETS] - DEFINITIONS - LOAD - UNLOAD
@@ -327,7 +326,7 @@ EntityID SpawnClientsideBullet()
 {
     EntityID bulletId = SpawnClientsideEntity(Vector2Zero(), DEFAULT_BULLET_SIZE, DEFAULT_BULLET_SPEED, ENTITY_BULLET);
     clientsideEntities[bulletId].lifetime = DEFAULT_BULLET_LIFETIME;
-    clientsideEntities[bulletId].bulletSequence = lastBulletSequence++;
+    clientsideEntities[bulletId].bulletSequence = ++lastBulletSequence;
     return bulletId;
 }
 EntityID SpawnServersideBullet()
@@ -372,35 +371,14 @@ Rectangle MakeRectangleFromCenter(Vector2 center, Vector2 size)
     return rect;
 }
 
-void GenerateWave()
-{
-    waveManager.isWaveInProgress = true;
-    waveManager.waveRefreshCooldownRemaining = waveManager.waveRefreshCooldown;
-
-    waveManager.redEnemiesToSpawn += waveManager.redEnemiesIncrease;
-    waveManager.redEnemiesLeftToSpawn = waveManager.redEnemiesToSpawn;
-    waveManager.redEnemiesSpeed += waveManager.redEnemiesSpeedIncrease;
-
-    waveManager.blueEnemiesToSpawn += waveManager.blueEnemiesIncrease;
-    waveManager.blueEnemiesLeftToSpawn = waveManager.blueEnemiesToSpawn;
-}
-
 void ApplyPowerupSpeed(EntityID entityId, EntityID powerupId)
 {
     PlaySound(soundEffects[SOUND_EFFECT_POWERUP]);
-    entities[entityId].speed *= 3.0f;
-    entities[entityId].powerupSpeedLifetime = DEFAULT_POWERUP_SPEED_LIFETIME;
-    entities[entityId].isPowerupSpeedActive = true;
-    entities[powerupId].isAlive = false;
 }
 
 void ApplyPowerupShooting(EntityID entityId, EntityID powerupId)
 {
     PlaySound(soundEffects[SOUND_EFFECT_POWERUP]);
-    entities[entityId].shootingCooldown /= 3.0f;
-    entities[entityId].powerupShootingLifetime = DEFAULT_POWERUP_SHOOTING_LIFETIME;
-    entities[entityId].isPowerupShootingActive = true;
-    entities[powerupId].isAlive = false;
 }
 
 void handlePlayerDeath(EntityID entityID)
@@ -467,11 +445,20 @@ void GameHandleNewEntityEvent(ServerEntityState *event)
 }
 
 /*
-    FUNCTIONS FOR HANDLING SERVER EVENTS
-    FUNCTIONS FOR HANDLING SERVER EVENTS
-    FUNCTIONS FOR HANDLING SERVER EVENTS
-    FUNCTIONS FOR HANDLING SERVER EVENTS
+    FUNCTIONS FOR HANDLING SERVER DELTAS
+    FUNCTIONS FOR HANDLING SERVER DELTAS
+    FUNCTIONS FOR HANDLING SERVER DELTAS
+    FUNCTIONS FOR HANDLING SERVER DELTAS
 */
+
+void GameHandleEntityFacingDelta(ServerEntityFacingDelta *delta)
+{
+    if (delta->id == playerID)
+        return;
+    Entity *entity = &entities[delta->id];
+    entity->facing = (Vector2){delta->fx, delta->fy};
+    entity->position = (Vector2){delta->x, delta->y};
+}
 
 void KillAllEntities()
 {
@@ -494,7 +481,42 @@ void ZoomOut()
     zoomBase -= 0.20f;
 }
 
-Vector2 prevDirectionInput = {0};
+void ApplyPlayerInput(ClientInputEvent event)
+{
+    Vector2 newPos = Vector2Add(entities[playerID].position, Vector2Scale((Vector2){event.dx, event.dy}, entities[playerID].speed * event.dt));
+    if (Vector2DistanceSqr(newPos, Vector2Zero()) <= (worldSize * worldSize))
+        entities[playerID].position = newPos;
+}
+
+void GameReconciliatePlayerPosition(uint32_t serverLastProcessedInput)
+{
+    int processed = 0;
+    while (processed < pendingInputCount &&
+           pendingInputs[processed].sequence <= serverLastProcessedInput)
+        processed++;
+
+    // Shift to the start of pendingInput, from the processed ones, with a size of the remainingInputs.
+    // Invariant that the array's valid inputs are at the start.
+    memmove(pendingInputs, pendingInputs + processed, (pendingInputCount - processed) * sizeof(ClientInputEvent));
+    pendingInputCount -= processed;
+
+    for (int i = 0; i < pendingInputCount; i++)
+    {
+        ApplyPlayerInput(pendingInputs[i]);
+    }
+}
+
+bool VectorsAreMoreThanDegreesApart(Vector2 a, Vector2 b, float deg)
+{
+    float rad = deg * DEG2RAD;
+
+    // dot = cos(theta)
+    float dot = a.x * b.x + a.y * b.y;
+
+    float angle = acosf(dot);
+
+    return angle > rad;
+}
 
 void Input(struct Client *client)
 {
@@ -519,12 +541,20 @@ void Input(struct Client *client)
     if (IsKeyDown(KEY_D))
         direction.x += 1;
 
-    prevDirectionInput = direction;
-    entities[playerID].direction = Vector2Normalize(direction);
     Vector2 mousePositionWorld = GetScreenToWorld2D(GetMousePosition(), camera);
     entities[playerID].facing = Vector2Normalize(Vector2Subtract(mousePositionWorld, entities[playerID].position));
 
-    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) || IsKeyPressed(KEY_SPACE))
+    if (direction.x != 0.0f || direction.y != 0.0f || VectorsAreMoreThanDegreesApart(entities[playerID].facing, prevFacing, 5))
+    {
+        ClientInputEvent input = {.sequence = ++lastInputSequence, .dx = direction.x, .dy = direction.y, .fx = entities[playerID].facing.x, .fy = entities[playerID].facing.y, .dt = GetFrameTime()};
+
+        NetworkPushInputMoveEvent(input);
+        ApplyPlayerInput(input);
+
+        pendingInputs[pendingInputCount++] = input;
+        prevFacing = entities[playerID].facing;
+    }
+    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) || IsKeyDown(KEY_SPACE))
         EntityShootBullet(playerID);
 }
 
@@ -587,15 +617,12 @@ void GameUpdateNetworkEntities(ServerEntityState *networkEntity, int count)
     for (int i = 0; i < count; i++)
     {
 
-        if (!(networkEntity[i].id == playerID))
-        {
-            entities[networkEntity[i].id].position.x = networkEntity[i].x;
-            entities[networkEntity[i].id].position.y = networkEntity[i].y;
-            entities[networkEntity[i].id].direction.x = networkEntity[i].vx;
-            entities[networkEntity[i].id].direction.y = networkEntity[i].vy;
-            if (networkEntity[i].type != ENTITY_RED_ENEMY)
-                entities[networkEntity[i].id].facing = DEFAULT_ENTITY_FACING;
-        }
+        entities[networkEntity[i].id].position.x = networkEntity[i].x;
+        entities[networkEntity[i].id].position.y = networkEntity[i].y;
+        entities[networkEntity[i].id].direction.x = networkEntity[i].vx;
+        entities[networkEntity[i].id].direction.y = networkEntity[i].vy;
+        if (networkEntity[i].type != ENTITY_RED_ENEMY && networkEntity[i].type != ENTITY_PLAYER)
+            entities[networkEntity[i].id].facing = DEFAULT_ENTITY_FACING;
         // General attributes
         entities[networkEntity[i].id].speed = networkEntity[i].speed;
         entities[networkEntity[i].id].type = networkEntity[i].type;
@@ -627,16 +654,15 @@ void UpdateNetwork(struct Client *client)
     while (elapsedTimeBetweenSnapshotTicks >= timeBetweenSnapshotTicks)
     {
         elapsedTimeBetweenSnapshotTicks -= timeBetweenSnapshotTicks;
-        if (entities[playerID].direction.x != 0.0f || entities[playerID].direction.y != 0.0f)
-        {
-            ClientInputMoveEvent mh = {.nx = (int16_t)entities[playerID].position.x, .ny = (int16_t)entities[playerID].position.y};
-            NetworkPushInputMoveEvent(mh);
-        }
+        // if (entities[playerID].direction.x != 0.0f || entities[playerID].direction.y != 0.0f)
+        // {
+        //     ClientInputAuthorativeMoveEvent mh = {.nx = (int16_t)entities[playerID].position.x, .ny = (int16_t)entities[playerID].position.y};
+        //     NetworkPushInputAuthorativeMoveEvent(mh);
+        // }
         NetworkSendPacket(client);
         NetworkPrepareBuffer();
-
-        NetworkRecievePacket(client);
     }
+    NetworkRecievePacket(client);
 }
 
 void UpdateEntities()
@@ -644,7 +670,7 @@ void UpdateEntities()
     FOR_EACH_ALIVE_ENTITY(i)
     {
         Vector2 newPos = Vector2Add(entities[i].position, Vector2Scale(entities[i].direction, entities[i].speed * GetFrameTime()));
-        if (Vector2Distance(newPos, Vector2Zero()) <= worldSize)
+        if (Vector2DistanceSqr(newPos, Vector2Zero()) <= (worldSize * worldSize))
             entities[i].position = newPos;
         if (entities[i].lifetime < 0.0f)
             entities[i].isAlive = false;
@@ -731,6 +757,7 @@ void RenderDebug()
         DrawLineV(entities[i].position, Vector2Add(entities[i].position, Vector2Scale(entities[i].direction, 50)), BLUE);
         DrawLineV(entities[i].position, Vector2Add(entities[i].position, Vector2Scale(entities[i].facing, 50)), GREEN);
     }
+    DrawLineV(entities[playerID].position, Vector2Add(entities[playerID].position, Vector2Scale(prevFacing, 50)), YELLOW);
 }
 
 void Render()

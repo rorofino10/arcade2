@@ -102,6 +102,26 @@ int NetworkPushNewEntityEvent(ServerEntityState entity)
     eventBufferOffset += size;
     return 0;
 }
+int NetworkPushEntityFacingDelta(ServerEntityFacingDelta delta)
+{
+    const size_t capacity = MAX_PACKET_SIZE - sizeof(ServerPacketHeader);
+    const size_t size = sizeof(ServerEntityFacingDelta);
+    const size_t need = sizeof(ServerEventHeader) + size;
+    printf("Pushing EntityFacingDelta, %d bytes\n", size);
+
+    if (need > capacity || eventBufferOffset + need > capacity)
+        return 1;
+
+    ServerEventHeader eventHeader;
+    eventHeader.type = SERVER_DELTA_ENTITY_FACING;
+    eventHeader.size = size;
+    memcpy(eventBuffer + eventBufferOffset, &eventHeader, sizeof(eventHeader));
+    eventBufferOffset += sizeof(eventHeader);
+
+    memcpy(eventBuffer + eventBufferOffset, &delta, size);
+    eventBufferOffset += size;
+    return 0;
+}
 
 void NetworkSendEventPacket(Server *server)
 {
@@ -128,7 +148,8 @@ void NetworkSendEventPacket(Server *server)
         SOCKET client = server->clients[i];
         if (client == INVALID_SOCKET)
             continue;
-        header->lastSequence = lastReceivedSequence[i];
+        header->lastProcessedBullet = lastProcessedBullet[i];
+        header->lastProcessedMovementInput = lastProcessedMovementInput[i];
         sent = send(client, buffer, totalSize, 0);
         if (sent == SOCKET_ERROR)
         {
@@ -213,7 +234,8 @@ void NetworkSendEntitiesSnapshot(struct Server *server)
             continue;
         // printf("Sending to Client[%d], %d entities\n", i, count);
         // printf("Sending to Client[%d], Entity[%d], .x=%d, .y=%d\n", i, entity, entities[entity].x, entities[entity].y);
-
+        header->lastProcessedBullet = lastProcessedBullet[i];
+        header->lastProcessedMovementInput = lastProcessedMovementInput[i];
         int sent = send(client, buffer, totalSize, 0);
         if (sent == SOCKET_ERROR)
         {
@@ -248,7 +270,8 @@ void NetworkSendWaveSnapshot(Server *server)
         SOCKET client = server->clients[i];
         if (client != INVALID_SOCKET)
         {
-
+            header->lastProcessedBullet = lastProcessedBullet[i];
+            header->lastProcessedMovementInput = lastProcessedMovementInput[i];
             int sent = send(client, buffer, totalSize, 0);
             if (sent == SOCKET_ERROR)
             {

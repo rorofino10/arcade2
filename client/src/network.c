@@ -37,12 +37,8 @@ void NetworkRecievePacket(Client *client)
         // printf("Received %d entities from server\n", count);
         GameUpdateNetworkEntities(entitiesPacket, count);
 
-        for (int i = 0; i < count; i++)
-        {
-            ServerEntityState *e = &entitiesPacket[i];
-            // printf("Entity %d: id=%d, x=%d, y=%d, type=%d, speed=%f\n",
-            //        i, e->id, e->x, e->y, e->type, e->speed);
-        }
+        GameReconciliatePlayerPosition(header.lastProcessedMovementInput);
+        GameResetClientsideBullets(header.lastProcessedBullet);
         break;
     case PACKET_WAVE_SNAPSHOT:
         ServerWaveSnapshot *waveSnapshot = (ServerWaveSnapshot *)buffer;
@@ -56,11 +52,11 @@ void NetworkRecievePacket(Client *client)
         break;
     case PACKET_SERVER_EVENTS:
         size_t offset = 0;
-        printf("[NETWORK]: SERVER_EVENT, Last Sequence: %d\n", header.lastSequence);
+        printf("[NETWORK]: SERVER_EVENT, Last Sequence: %d\n", header.lastProcessedBullet);
         while (offset < header.size)
         {
             // printf("OFFSET: %d\n", offset);
-            GameResetClientsideBullets(header.lastSequence);
+            GameResetClientsideBullets(header.lastProcessedBullet);
             ServerEventHeader *eheader = (ServerEventHeader *)(buffer + offset);
             offset += sizeof(ServerEventHeader);
 
@@ -91,6 +87,14 @@ void NetworkRecievePacket(Client *client)
                 printf("[SERVER]: NewEntityEvent id:[%d], dx:%f, dy:%f\n", entity->id, entity->vx, entity->vy);
                 GameHandleNewEntityEvent(entity);
             }
+            break;
+            case SERVER_DELTA_ENTITY_FACING:
+            {
+                ServerEntityFacingDelta *delta = (ServerEntityFacingDelta *)edata;
+                printf("[SERVER]: EntityFacingDelta id:[%d], fx:%f, fy:%f\n", delta->id, delta->fx, delta->fy);
+                GameHandleEntityFacingDelta(delta);
+            }
+            break;
             default:
                 break;
             }
@@ -143,10 +147,31 @@ void NetworkSendPacket(Client *client)
     free(buffer);
 }
 
-int NetworkPushInputMoveEvent(ClientInputMoveEvent event)
+int NetworkPushInputAuthorativeMoveEvent(ClientInputAuthorativeMoveEvent event)
 {
     const size_t capacity = MAX_PACKET_SIZE - sizeof(ClientPacketHeader);
-    const size_t size = sizeof(ClientInputMoveEvent);
+    const size_t size = sizeof(ClientInputAuthorativeMoveEvent);
+    const size_t need = sizeof(ClientPacketHeader) + size;
+    printf("Pushing ClientInputAuthorativeMoveEvent, %d bytes\n", size);
+
+    if (need > capacity || eventBufferOffset + need > capacity)
+        return 1;
+
+    ClientEventHeader eventHeader;
+    eventHeader.type = CLIENT_EVENT_INPUT_AUTHORATIVE_MOVE;
+    eventHeader.size = size;
+    memcpy(eventBuffer + eventBufferOffset, &eventHeader, sizeof(eventHeader));
+    eventBufferOffset += sizeof(eventHeader);
+
+    memcpy(eventBuffer + eventBufferOffset, &event, size);
+    eventBufferOffset += size;
+    return 0;
+}
+
+int NetworkPushInputMoveEvent(ClientInputEvent event)
+{
+    const size_t capacity = MAX_PACKET_SIZE - sizeof(ClientPacketHeader);
+    const size_t size = sizeof(ClientInputEvent);
     const size_t need = sizeof(ClientPacketHeader) + size;
     printf("Pushing ClientInputMoveEvent, %d bytes\n", size);
 

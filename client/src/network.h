@@ -10,5 +10,6 @@ void NetworkPrepareBuffer();
 void NetworkSendPacket(struct Client *client);
 void NetworkRecievePacket(struct Client *client);
 int NetworkPushInputShootEvent(ClientInputShootEvent event);
-int NetworkPushInputMoveEvent(ClientInputMoveEvent event);
+int NetworkPushInputAuthorativeMoveEvent(ClientInputAuthorativeMoveEvent event);
+int NetworkPushInputMoveEvent(ClientInputEvent event);
 #endif

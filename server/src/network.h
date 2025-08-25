@@ -14,10 +14,12 @@ void NetworkSendEntitiesSnapshot(struct Server *server);
 void NetworkSendWaveSnapshot(struct Server *server);
 void NetworkSendAssignedPlayerID(struct Server *server, int clientIndex, uint8_t playerID);
 
-void NetworkPrepareEventBuffer();
 int NetworkPushEntityDiedEvent(struct ServerEntityDiedEvent event);
 int NetworkPushPlayerCanShootEvent(struct ServerPlayerCanShootEvent event);
 int NetworkPushNewEntityEvent(ServerEntityState entity);
 int NetworkPushBulletSpawnEvent(ServerBulletSpawnEvent event);
+int NetworkPushEntityFacingDelta(ServerEntityFacingDelta delta);
+
+void NetworkPrepareEventBuffer();
 void NetworkSendEventPacket(struct Server *server);
 #endif
