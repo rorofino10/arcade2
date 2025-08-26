@@ -13,9 +13,35 @@
 char eventBuffer[MAX_PACKET_SIZE];
 size_t eventBufferOffset = 0;
 
+Client *client = NULL;
+
+void NetworkSetClient(Client *clientToSet) { client = clientToSet; }
+
+int NetworkTryConnect()
+{
+    int iResult = connect(client->socket, client->clientaddrinfo->ai_addr, (int)client->clientaddrinfo->ai_addrlen);
+    if (iResult == SOCKET_ERROR)
+    {
+        return FALSE;
+    }
+
+    if (client->socket == INVALID_SOCKET)
+    {
+        printf("Unable to connect to server!\n");
+        return FALSE;
+    }
+
+    freeaddrinfo(client->clientaddrinfo);
+    u_long mode = 1;
+    ioctlsocket(client->socket, FIONBIO, &mode);
+
+    printf("Connected to %s:%s\n", DEFAULT_HOST, DEFAULT_PORT);
+    return TRUE;
+}
+
 void NetworkPrepareBuffer() { eventBufferOffset = 0; }
 
-void NetworkRecievePacket(Client *client)
+void NetworkRecievePacket()
 {
     ServerPacketHeader header;
     int recvlen;
@@ -113,29 +139,21 @@ void NetworkRecievePacket(Client *client)
     }
 }
 
-void NetworkSendPacket(Client *client)
+void NetworkSendPacket()
 {
-    ClientPacketHeader header;
-    header.type = PACKET_INPUT_EVENT;
-    header.size = eventBufferOffset;
+    char buffer[MAX_PACKET_SIZE];
+    ClientPacketHeader *header = (ClientPacketHeader *)buffer;
+    header->type = PACKET_INPUT_EVENT;
+    header->size = eventBufferOffset;
 
-    if (header.size <= 0)
+    if (header->size <= 0)
         return;
 
-    int totalSize = sizeof(ClientPacketHeader) + header.size;
+    int totalSize = sizeof(ClientPacketHeader) + header->size;
 
-    char *buffer = (char *)malloc(totalSize);
-    if (!buffer)
-    {
-        printf("Failed to allocate packet buffer\n");
-        return;
-    }
+    char *payload = (char *)(buffer + sizeof(ClientPacketHeader));
+    memcpy(payload, eventBuffer, header->size);
 
-    // copy header and payload into buffer
-    memcpy(buffer, &header, sizeof(ClientPacketHeader));
-    memcpy(buffer + sizeof(ClientPacketHeader), eventBuffer, header.size);
-
-    // send everything in one go
     int sent = send(client->socket, buffer, totalSize, 0);
     if (sent == SOCKET_ERROR)
     {
@@ -148,10 +166,9 @@ void NetworkSendPacket(Client *client)
     else
     {
         printf("[NETWORK] Sent Packet: type=%d, payload=%d, total=%d\n",
-               header.type, header.size, totalSize);
+               header->type, header->size, totalSize);
     }
-
-    free(buffer);
+    NetworkPrepareBuffer();
 }
 
 int NetworkPushInputAuthorativeMoveEvent(ClientInputAuthorativeMoveEvent event)

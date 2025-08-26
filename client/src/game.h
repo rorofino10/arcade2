@@ -3,7 +3,6 @@
 
 #include "stdint.h"
 
-struct Client;
 struct ServerEntityState;
 struct ServerWaveSnapshot;
 struct ServerEntityDiedEvent;
@@ -12,7 +11,7 @@ struct ServerEntityState;
 struct ServerEntityFacingDelta;
 struct ServerPowerupEvent;
 
-void GameRun(struct Client *client);
+void GameRun();
 
 void GameUpdatePlayerID(uint8_t newPlayerID);
 void GameUpdateNetworkEntities(struct ServerEntityState *networkEntity, int count);

@@ -16,6 +16,10 @@ int entitiesAmountToSend = 0;
 char eventBuffer[MAX_PACKET_SIZE];
 size_t eventBufferOffset = 0;
 
+Server *server;
+
+void NetworkSetServer(Server *serverToSet) { server = serverToSet; }
+
 void NetworkPrepareEventBuffer() { eventBufferOffset = 0; }
 
 int NetworkPushBulletSpawnEvent(ServerBulletSpawnEvent event)
@@ -144,23 +148,23 @@ int NetworkPushEntityFacingDelta(ServerEntityFacingDelta delta)
     return 0;
 }
 
-void NetworkSendEventPacket(Server *server)
+void NetworkSendEventPacket()
 {
     char buffer[MAX_PACKET_SIZE];
     ServerPacketHeader *header = (ServerPacketHeader *)buffer;
 
     header->type = PACKET_SERVER_EVENTS;
     header->size = eventBufferOffset;
-    int totalSize = sizeof(ServerPacketHeader) + header->size;
 
     if (header->size <= 0)
     {
         // printf("[SERVER] No events to send\n");
         return;
     }
+    int totalSize = sizeof(ServerPacketHeader) + header->size;
 
     char *payload = (char *)(buffer + sizeof(ServerPacketHeader));
-    memcpy(payload, eventBuffer, eventBufferOffset);
+    memcpy(payload, eventBuffer, header->size);
 
     int sent;
     printf("[SERVER]: Broadcasting Event Packets, %d bytes\n", eventBufferOffset);
@@ -181,11 +185,12 @@ void NetworkSendEventPacket(Server *server)
             printf("Warning: not all bytes sent (%d/%d)\n", sent, totalSize);
         }
     }
+    NetworkPrepareEventBuffer();
 }
 
 ServerWaveSnapshot waveStateToSend;
 
-void NetworkSendAssignedPlayerID(Server *server, int clientIndex, uint8_t playerID)
+void NetworkSendAssignedPlayerID(int clientIndex, uint8_t playerID)
 {
     char buffer[MAX_PACKET_SIZE];
     ServerPacketHeader *header = (ServerPacketHeader *)buffer;
@@ -223,7 +228,7 @@ void NetworkSetWaveState(ServerWaveSnapshot waveState)
     waveStateToSend = waveState;
 }
 
-void NetworkSendEntitiesSnapshot(struct Server *server)
+void NetworkSendEntitiesSnapshot()
 {
     char buffer[MAX_PACKET_SIZE];
     ServerPacketHeader *header = (ServerPacketHeader *)buffer;
@@ -265,7 +270,7 @@ void NetworkSendEntitiesSnapshot(struct Server *server)
     }
 }
 
-void NetworkSendWaveSnapshot(Server *server)
+void NetworkSendWaveSnapshot()
 {
     char buffer[MAX_PACKET_SIZE];
     ServerPacketHeader *header = (ServerPacketHeader *)buffer;

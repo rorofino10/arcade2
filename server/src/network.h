@@ -8,19 +8,21 @@
 
 struct Server;
 
+void NetworkSetServer(struct Server *);
+
 void NetworkSetEntities(ServerEntityState *entities, int amount);
 void NetworkSetWaveState(ServerWaveSnapshot waveState);
-void NetworkSendEntitiesSnapshot(struct Server *server);
-void NetworkSendWaveSnapshot(struct Server *server);
-void NetworkSendAssignedPlayerID(struct Server *server, int clientIndex, uint8_t playerID);
+void NetworkSendEntitiesSnapshot();
+void NetworkSendWaveSnapshot();
+void NetworkSendAssignedPlayerID(int clientIndex, uint8_t playerID);
 
-int NetworkPushEntityDiedEvent(struct ServerEntityDiedEvent event);
-int NetworkPushPlayerCanShootEvent(struct ServerPlayerCanShootEvent event);
+int NetworkPushEntityDiedEvent(ServerEntityDiedEvent event);
+int NetworkPushPlayerCanShootEvent(ServerPlayerCanShootEvent event);
 int NetworkPushNewEntityEvent(ServerEntityState entity);
 int NetworkPushBulletSpawnEvent(ServerBulletSpawnEvent event);
 int NetworkPushEntityFacingDelta(ServerEntityFacingDelta delta);
 int NetworkPushPowerupEvent(ServerPowerupEvent event);
 
 void NetworkPrepareEventBuffer();
-void NetworkSendEventPacket(struct Server *server);
+void NetworkSendEventPacket();
 #endif

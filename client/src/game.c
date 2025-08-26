@@ -37,31 +37,19 @@ const EntityID DEFAULT_BLUEENEMIES_INCREASE = 1;
 const COOLDOWN DEFAULT_WAVE_REFRESH_COOLDOWN = 2.0f;
 const COOLDOWN DEFAULT_SPAWN_INTERVAL = 0.5f;
 
-const double SnapshotTPS = 30.0f;
-const double timeBetweenSnapshotTicks = 1.0 / SnapshotTPS;
-double elapsedTimeBetweenSnapshotTicks = 0.0f;
+const double EventTPS = 30.0f;
+const double timeBetweenEventTicks = 1.0 / EventTPS;
+double elapsedTimeBetweenEventTicks = 0.0f;
 
 typedef struct WaveManager
 {
     uint8_t wave;
     bool isWaveInProgress;
-    COOLDOWN waveRefreshCooldownRemaining;
-    COOLDOWN waveRefreshCooldown;
-
-    // Spawn Timings
-    COOLDOWN spawnCooldown;
-    COOLDOWN spawnCooldownRemaining;
 
     // Red Enemies
-    EntityID redEnemiesIncrease;
-    EntityID redEnemiesToSpawn;
-    EntityID redEnemiesLeftToSpawn;
     EntityID redEnemiesRemaining;
 
     // Blue Enemies
-    EntityID blueEnemiesIncrease;
-    EntityID blueEnemiesToSpawn;
-    EntityID blueEnemiesLeftToSpawn;
     EntityID blueEnemiesRemaining;
 
 } WaveManager;
@@ -69,23 +57,11 @@ typedef struct WaveManager
 WaveManager waveManager = {
     .wave = 1,
     .isWaveInProgress = true,
-    .waveRefreshCooldown = DEFAULT_WAVE_REFRESH_COOLDOWN,
-    .waveRefreshCooldownRemaining = DEFAULT_WAVE_REFRESH_COOLDOWN,
-
-    // Spawn Timings
-    .spawnCooldown = DEFAULT_SPAWN_INTERVAL,
-    .spawnCooldownRemaining = 0.0f,
 
     // Red Enemies
-    .redEnemiesIncrease = DEFAULT_REDENEMIES_INCREASE,
-    .redEnemiesToSpawn = 0,
-    .redEnemiesLeftToSpawn = 0,
     .redEnemiesRemaining = 0,
 
     // Blue Enemies
-    .blueEnemiesIncrease = DEFAULT_BLUEENEMIES_INCREASE,
-    .blueEnemiesToSpawn = 0,
-    .blueEnemiesLeftToSpawn = 0,
     .blueEnemiesRemaining = 0,
 };
 
@@ -111,9 +87,10 @@ typedef enum GameState
     PLAYING,
     LOST,
     PAUSED,
+    CONNECTING,
 } GameState;
 
-GameState gameState = PLAYING;
+GameState gameState = CONNECTING;
 bool debug = false;
 
 typedef enum
@@ -163,11 +140,15 @@ typedef struct
 
 const EntityID entitiesCount = UINT8_MAX - 1;
 EntityID playerID = 0;
-Vector2 prevPlayerPosition = (Vector2){0};
 Entity *entities = NULL;
 Entity *clientsideEntities = NULL;
+
+// Sequencing
 uint32_t lastBulletSequence = 0;
 uint32_t lastInputSequence = 0;
+
+// Deltas
+Vector2 prevPlayerPosition = (Vector2){0};
 Vector2 prevFacing = DEFAULT_ENTITY_FACING;
 Vector2 prevDir = (Vector2){0, 0};
 
@@ -532,7 +513,7 @@ bool VectorsAreMoreThanDegreesApart(Vector2 a, Vector2 b, float deg)
     return angle > rad;
 }
 
-void Input(struct Client *client)
+void Input()
 {
     if (IsKeyPressed(KEY_P))
         gameState = PAUSED;
@@ -663,20 +644,17 @@ void GameUpdateNetworkWave(ServerWaveSnapshot *waveSnapshot)
     waveManager.redEnemiesRemaining = waveSnapshot->redEnemiesRemaining;
 }
 
-void UpdateNetwork(struct Client *client)
+void UpdateNetwork()
 {
-    while (elapsedTimeBetweenSnapshotTicks >= timeBetweenSnapshotTicks)
+    while (elapsedTimeBetweenEventTicks >= timeBetweenEventTicks)
     {
-        elapsedTimeBetweenSnapshotTicks -= timeBetweenSnapshotTicks;
-        // if (entities[playerID].direction.x != 0.0f || entities[playerID].direction.y != 0.0f)
-        // {
-        //     ClientInputAuthorativeMoveEvent mh = {.nx = (int16_t)entities[playerID].position.x, .ny = (int16_t)entities[playerID].position.y};
-        //     NetworkPushInputAuthorativeMoveEvent(mh);
-        // }
-        NetworkSendPacket(client);
-        NetworkPrepareBuffer();
+        elapsedTimeBetweenEventTicks -= timeBetweenEventTicks;
+
+        NetworkSendPacket();
     }
-    NetworkRecievePacket(client);
+
+    // always recv
+    NetworkRecievePacket();
 }
 
 void UpdateEntities()
@@ -734,14 +712,14 @@ void UpdateClientsideEntities()
     }
 }
 
-void Update(struct Client *client)
+void Update()
 {
     UpdateMusicStream(backgroundMusic);
 
     UpdateEntities();
     UpdateClientsideEntities();
     UpdateCameraMovement();
-    UpdateNetwork(client);
+    UpdateNetwork();
 }
 
 const uint32_t cellSize = 50;
@@ -842,7 +820,19 @@ void RenderLostScreen()
     EndDrawing();
 }
 
-void GameRun(struct Client *client)
+void RenderConnectingScreen()
+{
+
+    BeginDrawing();
+
+    ClearBackground(SKYBLUE);
+
+    Vector2 titlePos = (Vector2){screenWidth / 2, 20};
+    DrawText("CONNECTING...", titlePos.x, titlePos.y, 50, WHITE);
+    EndDrawing();
+}
+
+void GameRun()
 {
     InitWindow(screenWidth, screenHeight, gameTitle);
     InitAudioDevice();
@@ -863,14 +853,14 @@ void GameRun(struct Client *client)
         double deltaTime = currentTime - prevTime;
         prevTime = currentTime;
 
-        elapsedTimeBetweenSnapshotTicks += deltaTime;
+        elapsedTimeBetweenEventTicks += deltaTime;
 
         switch (gameState)
         {
         case PLAYING:
-            Input(client);
+            Input();
 
-            Update(client);
+            Update();
 
             Render();
             break;
@@ -879,6 +869,12 @@ void GameRun(struct Client *client)
                 gameState = PLAYING;
 
             Render();
+            break;
+        case CONNECTING:
+            if (NetworkTryConnect())
+                gameState = PLAYING;
+
+            RenderConnectingScreen();
             break;
         case LOST:
             RenderLostScreen();

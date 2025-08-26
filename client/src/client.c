@@ -5,10 +5,9 @@
 
 #include "game.h"
 #include "client.h"
-#pragma comment(lib, "Ws2_32.lib")
+#include "network.h"
 
-#define DEFAULT_PORT "2112"
-#define DEFAULT_HOST "127.0.0.1"
+#pragma comment(lib, "Ws2_32.lib")
 
 int ClientInit(Client *client);
 void ClientRun(Client *client);
@@ -55,32 +54,13 @@ int ClientInit(Client *client)
         WSACleanup();
         return 1;
     }
-
-    iResult = connect(client->socket, ptr->ai_addr, (int)ptr->ai_addrlen);
-    if (iResult == SOCKET_ERROR)
-    {
-        closesocket(client->socket);
-        client->socket = INVALID_SOCKET;
-    }
-
-    freeaddrinfo(result);
-
-    if (client->socket == INVALID_SOCKET)
-    {
-        printf("Unable to connect to server!\n");
-        WSACleanup();
-        return 1;
-    }
-
-    u_long mode = 1;
-    ioctlsocket(client->socket, FIONBIO, &mode);
-
-    printf("Connected to %s:%s\n", DEFAULT_HOST, DEFAULT_PORT);
+    client->clientaddrinfo = result;
+    NetworkSetClient(client);
 }
 
 void ClientRun(Client *client)
 {
-    GameRun(client);
+    GameRun();
 }
 
 void ClientClose(Client *client)

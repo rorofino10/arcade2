@@ -6,9 +6,14 @@
 
 struct Client;
 
+void NetworkSetClient(struct Client *clientToSet);
+
+int NetworkTryConnect();
+
 void NetworkPrepareBuffer();
-void NetworkSendPacket(struct Client *client);
-void NetworkRecievePacket(struct Client *client);
+void NetworkSendPacket();
+void NetworkRecievePacket();
+
 int NetworkPushInputShootEvent(ClientInputShootEvent event);
 int NetworkPushInputAuthorativeMoveEvent(ClientInputAuthorativeMoveEvent event);
 int NetworkPushInputMoveEvent(ClientInputEvent event);

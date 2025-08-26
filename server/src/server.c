@@ -42,8 +42,8 @@ void ServerTrySnapshotTick(Server *server)
     while (elapsedTimeBetweenSnapshotTicks >= timeBetweenSnapshotTicks)
     {
         elapsedTimeBetweenSnapshotTicks -= timeBetweenSnapshotTicks;
-        NetworkSendEntitiesSnapshot(server);
-        NetworkSendWaveSnapshot(server);
+        NetworkSendEntitiesSnapshot();
+        NetworkSendWaveSnapshot();
     }
 }
 
@@ -55,8 +55,7 @@ void ServerTryEventTick(Server *server)
         elapsedTimeBetweenEventTicks -= timeBetweenEventTicks;
 
         GamePushEntityDeltas();
-        NetworkSendEventPacket(server);
-        NetworkPrepareEventBuffer();
+        NetworkSendEventPacket();
     }
 }
 
@@ -126,7 +125,8 @@ int ServerInit(Server *server)
     {
         server->clients[i] = INVALID_SOCKET;
     }
-    printf("init success\n");
+    printf("[SERVER] Initialized\n");
+    NetworkSetServer(server);
     GameInit();
     return 0;
 }
@@ -152,7 +152,7 @@ void ServerTryAcceptConnection(Server *server)
             server->nfds++;
             printf("New client connected: %d\n", i);
             uint8_t playerID = GameAssignPlayerToClient(i);
-            NetworkSendAssignedPlayerID(server, i, playerID);
+            NetworkSendAssignedPlayerID(i, playerID);
             return;
         }
     }
