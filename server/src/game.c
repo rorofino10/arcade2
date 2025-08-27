@@ -411,7 +411,6 @@ void KillEntity(EntityID entityId)
         handleBlueEnemyDeath(entityId);
         CheckWaveEnded();
         break;
-
     case ENTITY_RED_ENEMY:
         handleRedEnemyDeath(entityId);
         CheckWaveEnded();
@@ -549,7 +548,7 @@ void GamePushEntityDeltas()
         Entity *entity = &entities[id];
         if (entity->type != ENTITY_PLAYER || !entity->dirty)
             continue;
-        NetworkPushEntityFacingDelta((ServerEntityFacingDelta){
+        NetworkPushUnreliableEntityFacingDelta((ServerEntityFacingDelta){
             .id = id,
             .fx = entity->facing.x,
             .fy = entity->facing.y,
@@ -635,7 +634,8 @@ void GameUpdate(double delta)
         if (Vector2Distance(newPos, Vector2Zero()) <= worldSize)
             entities[i].position = newPos;
         if (entities[i].lifetime < 0.0f)
-            entities[i].isAlive = false;
+            KillEntity(i);
+        // entities[i].isAlive = false;
         switch (entities[i].type)
         {
         case ENTITY_RED_ENEMY:

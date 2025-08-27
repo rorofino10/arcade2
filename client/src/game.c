@@ -152,7 +152,8 @@ Vector2 prevPlayerPosition = (Vector2){0};
 Vector2 prevFacing = DEFAULT_ENTITY_FACING;
 Vector2 prevDir = (Vector2){0, 0};
 
-ClientInputEvent pendingInputs[128];
+#define MAX_PENDING_INPUTS 128
+ClientInputEvent pendingInputs[MAX_PENDING_INPUTS];
 int pendingInputCount = 0;
 
 /*
@@ -170,14 +171,14 @@ Sound soundEffects[SOUND_EFFECT_COUNT];
 
 void LoadAllTextures()
 {
-    textures[ENTITY_PLAYER] = LoadTexture("assets/player.png");
-    textures[ENTITY_RED_ENEMY] = LoadTexture("assets/red_enemy.png");
-    textures[ENTITY_BLUE_ENEMY] = LoadTexture("assets/blue_enemy.png");
-    textures[ENTITY_BULLET] = LoadTexture("assets/bullet.png");
-    textures[ENTITY_POWERUP_SPEED] = LoadTexture("assets/powerup_speed.png");
-    textures[ENTITY_POWERUP_SHOOTING] = LoadTexture("assets/powerup_shooting.png");
-    textures[ENTITY_EXPLOSION] = LoadTexture("assets/explosion.png");
-    textures[ENTITY_NEUTRAL] = LoadTexture("assets/neutral.png");
+    textures[ENTITY_PLAYER] = LoadTexture("client/assets/player.png");
+    textures[ENTITY_RED_ENEMY] = LoadTexture("client/assets/red_enemy.png");
+    textures[ENTITY_BLUE_ENEMY] = LoadTexture("client/assets/blue_enemy.png");
+    textures[ENTITY_BULLET] = LoadTexture("client/assets/bullet.png");
+    textures[ENTITY_POWERUP_SPEED] = LoadTexture("client/assets/powerup_speed.png");
+    textures[ENTITY_POWERUP_SHOOTING] = LoadTexture("client/assets/powerup_shooting.png");
+    textures[ENTITY_EXPLOSION] = LoadTexture("client/assets/explosion.png");
+    textures[ENTITY_NEUTRAL] = LoadTexture("client/assets/neutral.png");
 }
 
 void UnloadAllTextures()
@@ -189,11 +190,11 @@ void UnloadAllTextures()
 }
 void LoadAllSoundEffects()
 {
-    backgroundMusic = LoadMusicStream("assets/background_music.mp3");
+    backgroundMusic = LoadMusicStream("client/assets/background_music.mp3");
 
-    soundEffects[SOUND_EFFECT_BULLET] = LoadSound("assets/laser.mp3");
-    soundEffects[SOUND_EFFECT_EXPLOSION] = LoadSound("assets/explosion.wav");
-    soundEffects[SOUND_EFFECT_POWERUP] = LoadSound("assets/power_up.mp3");
+    soundEffects[SOUND_EFFECT_BULLET] = LoadSound("client/assets/laser.mp3");
+    soundEffects[SOUND_EFFECT_EXPLOSION] = LoadSound("client/assets/explosion.wav");
+    soundEffects[SOUND_EFFECT_POWERUP] = LoadSound("client/assets/power_up.mp3");
 }
 
 void UnloadAllSoundEffects()
@@ -437,6 +438,8 @@ void GameHandleNewEntityEvent(ServerEntityState *event)
     SpawnServersideEntityAt(event->id, (Vector2){event->x, event->y}, size, event->speed, event->type);
     entities[event->id].direction.x = event->vx;
     entities[event->id].direction.y = event->vy;
+    if (event->type == ENTITY_BULLET)
+        entities[event->id].facing = entities[event->id].direction;
 }
 
 /*
@@ -539,7 +542,7 @@ void Input()
     Vector2 mousePositionWorld = GetScreenToWorld2D(GetMousePosition(), camera);
     entities[playerID].facing = Vector2Normalize(Vector2Subtract(mousePositionWorld, entities[playerID].position));
 
-    if (direction.x != 0.0f || direction.y != 0.0f || VectorsAreMoreThanDegreesApart(entities[playerID].facing, prevFacing, 5))
+    if (direction.x != 0.0f || direction.y != 0.0f || VectorsAreMoreThanDegreesApart(entities[playerID].facing, prevFacing, 5) && pendingInputCount < MAX_PENDING_INPUTS)
     {
         ClientInputEvent input = {.sequence = ++lastInputSequence, .dx = direction.x, .dy = direction.y, .fx = entities[playerID].facing.x, .fy = entities[playerID].facing.y, .dt = GetFrameTime()};
 
@@ -654,6 +657,7 @@ void UpdateNetwork()
     }
 
     // always recv
+    NetworkRecieveUDPPacket();
     NetworkRecievePacket();
 }
 

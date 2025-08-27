@@ -54,6 +54,7 @@ typedef struct
     uint16_t size;
 } __attribute__((packed)) ClientEventHeader;
 
+// sizeof(ServerPacketHeader)=11
 typedef struct
 {
     uint8_t type;
@@ -61,6 +62,20 @@ typedef struct
     uint32_t lastProcessedBullet;
     uint32_t lastProcessedMovementInput;
 } __attribute__((packed)) ServerPacketHeader;
+
+typedef struct
+{
+    uint32_t sequence;
+    uint32_t lastProcessedBullet;
+    uint32_t lastProcessedMovementInput;
+    uint8_t type;
+    uint16_t size;
+} __attribute__((packed)) ServerUDPPacketHeader;
+typedef struct
+{
+    uint8_t type;
+    uint16_t size;
+} __attribute__((packed)) ClientUDPPacketHeader;
 
 // sizeof(ServerEntityState)=16
 typedef struct ServerEntityState

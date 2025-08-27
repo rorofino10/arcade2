@@ -55,6 +55,32 @@ int ClientInit(Client *client)
         return 1;
     }
     client->clientaddrinfo = result;
+
+    client->serveraddr = *(struct sockaddr_in *)result->ai_addr;
+    client->udpSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (client->udpSocket == INVALID_SOCKET)
+    {
+        printf("Error at socket(): %ld\n", WSAGetLastError());
+        freeaddrinfo(result);
+        WSACleanup();
+        return 1;
+    }
+    // struct sockaddr_in localAddr;
+    // ZeroMemory(&localAddr, sizeof(localAddr));
+    // localAddr.sin_family = AF_INET;
+    // localAddr.sin_addr.s_addr = INADDR_ANY; // listen on all interfaces
+    // localAddr.sin_port = htons(5001);       // client listening port
+
+    // if (bind(client->udpSocket, (struct sockaddr *)&localAddr, sizeof(localAddr)) == SOCKET_ERROR)
+    // {
+    //     printf("bind() failed: %d\n", WSAGetLastError());
+    //     closesocket(client->udpSocket);
+    //     WSACleanup();
+    //     return 1;
+    // }
+
+    // printf("UDP client listening on port %d...\n", ntohs(localAddr.sin_port));
+    client->lastReceivedSequence = 0;
     NetworkSetClient(client);
 }
 

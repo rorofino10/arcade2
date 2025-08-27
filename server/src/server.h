@@ -7,11 +7,21 @@
 #define DEFAULT_PORT "2112"
 #define MAX_CLIENTS 2
 
+typedef struct
+{
+    struct sockaddr_in addr;
+    int active;
+
+    uint32_t nextSeq;
+    uint32_t lastAckedSeq;
+} UDPClient;
+
 typedef struct Server
 {
     SOCKET listenSocket;
-    SOCKET clients[MAX_CLIENTS];
-    WSAPOLLFD fds[1 + MAX_CLIENTS];
+    SOCKET tcpClients[MAX_CLIENTS];
+    UDPClient udpClients[MAX_CLIENTS];
+    WSAPOLLFD fds[2 + MAX_CLIENTS];
     int nfds;
 } Server;
 

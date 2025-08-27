@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -g -IC:/raylib/include -Isrc
+CFLAGS = -g -IC:/raylib/include -I../shared/include -Isrc
 LDFLAGS =  -LC:/raylib/lib
 LDLIBS = -lws2_32 -lraylib -lopengl32 -lgdi32 -lwinmm
 
@@ -11,6 +11,7 @@ BINDIR = bin
 BUILDDIR = build
 BINNAME = client
 BINARY = ${BINDIR}/${BINNAME}.exe
+
 
 all: ${BINARY}
 

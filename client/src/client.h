@@ -9,7 +9,10 @@
 typedef struct Client
 {
     SOCKET socket;
+    SOCKET udpSocket;
+    uint32_t lastReceivedSequence;
     struct addrinfo *clientaddrinfo;
+    struct sockaddr_in serveraddr;
 } Client;
 
 #endif

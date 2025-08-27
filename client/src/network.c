@@ -22,24 +22,121 @@ int NetworkTryConnect()
     int iResult = connect(client->socket, client->clientaddrinfo->ai_addr, (int)client->clientaddrinfo->ai_addrlen);
     if (iResult == SOCKET_ERROR)
     {
+        Sleep(5);
+        printf("Unable to connect to server!\n");
         return FALSE;
     }
 
     if (client->socket == INVALID_SOCKET)
     {
+        Sleep(5);
         printf("Unable to connect to server!\n");
         return FALSE;
     }
+    ClientUDPPacketHeader header;
+    header.type = PACKET_ASSIGN_PLAYER;
+    header.size = 0;
 
-    freeaddrinfo(client->clientaddrinfo);
     u_long mode = 1;
     ioctlsocket(client->socket, FIONBIO, &mode);
+    u_long udpmode = 1;
+    ioctlsocket(client->udpSocket, FIONBIO, &udpmode);
+
+    sendto(client->udpSocket, (char *)&header, sizeof(header), 0, (struct sockaddr *)&client->serveraddr, sizeof(client->serveraddr));
+    freeaddrinfo(client->clientaddrinfo);
 
     printf("Connected to %s:%s\n", DEFAULT_HOST, DEFAULT_PORT);
     return TRUE;
 }
 
 void NetworkPrepareBuffer() { eventBufferOffset = 0; }
+
+void NetworkRecieveUDPPacket()
+{
+    char buffer[MAX_PACKET_SIZE];
+    struct sockaddr_in from;
+    int fromlen = sizeof(from);
+    int recvlen = recvfrom(client->udpSocket, buffer, sizeof(buffer), 0, (struct sockaddr *)&from, &fromlen);
+    if (recvlen == SOCKET_ERROR)
+    {
+        if (WSAGetLastError() == WSAEWOULDBLOCK)
+        {
+            // No data yet, can do other tasks
+        }
+        else
+        {
+            printf("[UDP] Error receiving.\n");
+        }
+        return;
+    }
+    ServerUDPPacketHeader *header = (ServerUDPPacketHeader *)buffer;
+
+    char *payload = buffer + sizeof(ServerUDPPacketHeader);
+    size_t payload_len = header->size;
+    size_t expected_len = payload_len + sizeof(ServerUDPPacketHeader);
+
+    // printf("[UDP] Received %d bytes, size:%d, type:%d, sequence:%d, lastRecvSequence:%d\n", recvlen, payload_len, header->type, header->sequence, client->lastReceivedSequence);
+
+    if (recvlen != expected_len)
+    {
+        printf("[NETWORK] Invalid recvlen\n");
+        return;
+    }
+
+    if (header->sequence < client->lastReceivedSequence)
+    {
+        printf("[NETWORK] Old packet, dropping it...\n");
+        return;
+    }
+    client->lastReceivedSequence = header->sequence;
+    switch (header->type)
+    {
+    case PACKET_ENTITY_SNAPSHOT:
+        ServerEntityState *entitiesPacket = (ServerEntityState *)payload;
+        int count = payload_len / sizeof(ServerEntityState);
+        // printf("[UDP] Received %d entities from server\n", count);
+        GameUpdateNetworkEntities(entitiesPacket, count);
+
+        GameReconciliatePlayerPosition(header->lastProcessedMovementInput);
+        GameResetClientsideBullets(header->lastProcessedBullet);
+        break;
+    case PACKET_WAVE_SNAPSHOT:
+        ServerWaveSnapshot *waveSnapshot = (ServerWaveSnapshot *)payload;
+        GameUpdateNetworkWave(waveSnapshot);
+        break;
+    case PACKET_SERVER_EVENTS:
+        size_t offset = 0;
+        GameResetClientsideBullets(header->lastProcessedBullet);
+        printf("[UDP] Received %d bytes, size:%d, type:%d, expected:%d\n", recvlen, payload_len, header->type, expected_len);
+        printf("[UDP] Received UnreliableEventPacket from Server\n");
+
+        while (offset < header->size)
+        {
+            ServerEventHeader *eheader = (ServerEventHeader *)(payload + offset);
+            offset += sizeof(ServerEventHeader);
+
+            char *edata = payload + offset;
+            offset += eheader->size;
+            printf("[UDP] Parsing UnreliableEventPacket type:%d, size:%d\n", eheader->type, eheader->size);
+
+            switch (eheader->type)
+            {
+            case SERVER_DELTA_ENTITY_FACING:
+            {
+                ServerEntityFacingDelta *delta = (ServerEntityFacingDelta *)edata;
+                printf("[SERVER]: EntityFacingDelta id:[%d], fx:%f, fy:%f\n", delta->id, delta->fx, delta->fy);
+                GameHandleEntityFacingDelta(delta);
+            }
+            break;
+            default:
+                break;
+            }
+        }
+        break;
+    default:
+        break;
+    }
+}
 
 void NetworkRecievePacket()
 {
@@ -78,11 +175,11 @@ void NetworkRecievePacket()
         break;
     case PACKET_SERVER_EVENTS:
         size_t offset = 0;
-        printf("[NETWORK]: SERVER_EVENT, Last Sequence: %d\n", header.lastProcessedBullet);
+        GameResetClientsideBullets(header.lastProcessedBullet);
+
         while (offset < header.size)
         {
             // printf("OFFSET: %d\n", offset);
-            GameResetClientsideBullets(header.lastProcessedBullet);
             ServerEventHeader *eheader = (ServerEventHeader *)(buffer + offset);
             offset += sizeof(ServerEventHeader);
 

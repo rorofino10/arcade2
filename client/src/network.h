@@ -13,6 +13,7 @@ int NetworkTryConnect();
 void NetworkPrepareBuffer();
 void NetworkSendPacket();
 void NetworkRecievePacket();
+void NetworkRecieveUDPPacket();
 
 int NetworkPushInputShootEvent(ClientInputShootEvent event);
 int NetworkPushInputAuthorativeMoveEvent(ClientInputAuthorativeMoveEvent event);

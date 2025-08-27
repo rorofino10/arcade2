@@ -22,7 +22,7 @@ const double SnapshotTPS = 10.0f;
 const double timeBetweenSnapshotTicks = 1.0 / SnapshotTPS;
 double elapsedTimeBetweenSnapshotTicks = 0.0f;
 
-const double EventTPS = 30.0f;
+const double EventTPS = 60.0f;
 const double timeBetweenEventTicks = 1.0 / EventTPS;
 double elapsedTimeBetweenEventTicks = 0.0f;
 
@@ -42,8 +42,10 @@ void ServerTrySnapshotTick(Server *server)
     while (elapsedTimeBetweenSnapshotTicks >= timeBetweenSnapshotTicks)
     {
         elapsedTimeBetweenSnapshotTicks -= timeBetweenSnapshotTicks;
-        NetworkSendEntitiesSnapshot();
-        NetworkSendWaveSnapshot();
+        NetworkSendUnreliableEntitiesSnapshot();
+        NetworkSendUnreliableWaveSnapshot();
+        // NetworkSendEntitiesSnapshot();
+        // NetworkSendWaveSnapshot();
     }
 }
 
@@ -54,8 +56,9 @@ void ServerTryEventTick(Server *server)
     {
         elapsedTimeBetweenEventTicks -= timeBetweenEventTicks;
 
-        GamePushEntityDeltas();
         NetworkSendEventPacket();
+        GamePushEntityDeltas();
+        NetworkSendUnreliableEventPacket();
     }
 }
 
@@ -117,13 +120,58 @@ int ServerInit(Server *server)
         return 1;
     }
 
-    server->fds[0].fd = server->listenSocket;
-    server->fds[0].events = POLLRDNORM;
-    server->nfds = 1;
+    server->fds[server->nfds].fd = server->listenSocket;
+    server->fds[server->nfds].events = POLLRDNORM;
+    server->nfds++;
+
+    // Setting Up UDP Socket
+    ZeroMemory(&hints, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+    hints.ai_protocol = IPPROTO_UDP;
+    hints.ai_flags = AI_PASSIVE;
+
+    iResult = getaddrinfo(NULL, DEFAULT_PORT, &hints, &result);
+    if (iResult != 0)
+    {
+        printf("getaddrinfo failed with error: %d\n", iResult);
+        WSACleanup();
+        return 1;
+    }
+
+    SOCKET udpSocket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
+    if (udpSocket == INVALID_SOCKET)
+    {
+        printf("socket failed with error: %ld\n", WSAGetLastError());
+        freeaddrinfo(result);
+        WSACleanup();
+        return 1;
+    }
+
+    iResult = bind(udpSocket, result->ai_addr, (int)result->ai_addrlen);
+    if (iResult == SOCKET_ERROR)
+    {
+        printf("bind failed with error: %d\n", WSAGetLastError());
+        freeaddrinfo(result);
+        closesocket(udpSocket);
+        WSACleanup();
+        return 1;
+    }
+    freeaddrinfo(result);
+    u_long mode = 1;
+    ioctlsocket(udpSocket, FIONBIO, &mode);
+
+    server->fds[server->nfds].fd = udpSocket;
+    server->fds[server->nfds].events = POLLRDNORM;
+    server->nfds++;
 
     for (int i = 0; i < MAX_CLIENTS; i++)
     {
-        server->clients[i] = INVALID_SOCKET;
+        server->tcpClients[i] = INVALID_SOCKET;
+    }
+    for (int i = 0; i < MAX_CLIENTS; i++)
+    {
+        server->udpClients[i].active = FALSE;
     }
     printf("[SERVER] Initialized\n");
     NetworkSetServer(server);
@@ -142,11 +190,11 @@ void ServerTryAcceptConnection(Server *server)
 
     for (int i = 0; i < MAX_CLIENTS; i++)
     {
-        if (server->clients[i] == INVALID_SOCKET)
+        if (server->tcpClients[i] == INVALID_SOCKET)
         {
             u_long mode = 1;
             ioctlsocket(newClientSocket, FIONBIO, &mode);
-            server->clients[i] = newClientSocket;
+            server->tcpClients[i] = newClientSocket;
             server->fds[server->nfds].fd = newClientSocket;
             server->fds[server->nfds].events = POLLRDNORM;
             server->nfds++;
@@ -165,11 +213,81 @@ void ServerBroadcast(Server *server, char *buf, int len)
 {
     for (int i = 0; i < MAX_CLIENTS; i++)
     {
-        if (server->clients[i] != INVALID_SOCKET)
+        if (server->tcpClients[i] != INVALID_SOCKET)
         {
-            send(server->clients[i], buf, len, 0);
+            send(server->tcpClients[i], buf, len, 0);
         }
     }
+}
+
+int FindOrAddUDPClient(Server *server, struct sockaddr_in *from)
+{
+    for (int i = 0; i < MAX_CLIENTS; i++)
+    {
+        UDPClient *client = &server->udpClients[i];
+        if (client->active && client->addr.sin_addr.S_un.S_addr == from->sin_addr.S_un.S_addr && client->addr.sin_port == from->sin_port)
+            return i;
+    }
+    printf("Did not find. Adding.\n");
+    // Did not find, Add.
+    for (int i = 0; i < MAX_CLIENTS; i++)
+    {
+        UDPClient *client = &server->udpClients[i];
+        if (client->active)
+            continue;
+        client->addr = *from;
+        client->lastAckedSeq = 0;
+        client->nextSeq = 1;
+        client->active = TRUE;
+        return i;
+    }
+    printf("No space to add.\n");
+    // No space to add.
+    return -1;
+}
+
+void ServerHandleUDPClient(Server *server)
+{
+    // printf("Handling UDPClient\n");
+    SOCKET udpSocket = server->fds[1].fd;
+    char buffer[1400];
+    struct sockaddr_in from;
+    int fromLen = sizeof(from);
+    int bytes = recvfrom(udpSocket, buffer, sizeof(buffer), 0, (struct sockaddr *)&from, &fromLen);
+
+    if (bytes > 0)
+    {
+        char ip[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &from.sin_addr, ip, sizeof(ip));
+        printf("New client from %s:%d\n", ip, ntohs(from.sin_port));
+        ClientUDPPacketHeader *header = (ClientUDPPacketHeader *)buffer;
+        // printf("[SERVER] Received UDP Packet, type: %d, size:%d", header->type, header->size);
+        int clientIdx = FindOrAddUDPClient(server, &from);
+        if (clientIdx == -1)
+            return;
+        char sendBuf[MAX_PACKET_SIZE];
+        ServerUDPPacketHeader *sendheader = (ServerUDPPacketHeader *)sendBuf;
+        sendheader->type = PACKET_ASSIGN_PLAYER;
+        sendheader->sequence = server->udpClients[clientIdx].nextSeq++;
+        sendheader->lastProcessedBullet = lastProcessedBullet[clientIdx];
+        sendheader->lastProcessedMovementInput = lastProcessedMovementInput[clientIdx];
+        sendheader->size = 0;
+        int sent = sendto(server->fds[1].fd, sendBuf, sizeof(ServerUDPPacketHeader), 0, (struct sockaddr *)&server->udpClients[clientIdx].addr, sizeof(server->udpClients[clientIdx].addr));
+        // printf("Sending to Client[%d] Addr:%s:%d\n", clientIdx, inet_ntoa(server->udpClients[clientIdx].addr.sin_addr), ntohs(server->udpClients[clientIdx].addr.sin_port));
+    }
+}
+
+void ServerDisconnectClient(Server *server, int fdsIndex)
+{
+    int clientIndex = fdsIndex - 2;
+    SOCKET s = server->fds[fdsIndex].fd;
+
+    printf("Client[%d] disconnected\n", clientIndex);
+    closesocket(s);
+    server->tcpClients[clientIndex] = INVALID_SOCKET;
+    server->udpClients[clientIndex].active = FALSE;
+    server->fds[fdsIndex] = server->fds[server->nfds - 1];
+    server->nfds--;
 }
 
 void ServerHandleClient(Server *server, int fdsIndex)
@@ -177,7 +295,7 @@ void ServerHandleClient(Server *server, int fdsIndex)
     ClientPacketHeader header;
     SOCKET s = server->fds[fdsIndex].fd;
     int recvlen;
-    int clientIndex = fdsIndex - 1;
+    int clientIndex = fdsIndex - 2;
     recvlen = recv(s, (char *)&header, sizeof(header), 0);
 
     if (recvlen > 0)
@@ -186,11 +304,7 @@ void ServerHandleClient(Server *server, int fdsIndex)
     }
     else if (recvlen == 0)
     {
-        printf("Client[%d] disconnected\n", clientIndex);
-        closesocket(s);
-        server->clients[clientIndex] = INVALID_SOCKET;
-        server->fds[fdsIndex] = server->fds[server->nfds - 1];
-        server->nfds--;
+        ServerDisconnectClient(server, fdsIndex);
         return;
     }
     else
@@ -202,11 +316,8 @@ void ServerHandleClient(Server *server, int fdsIndex)
         }
         else
         {
-            printf("Client[%d] disconnected, error %d\n", clientIndex, err);
-            closesocket(s);
-            server->clients[clientIndex] = INVALID_SOCKET;
-            server->fds[fdsIndex] = server->fds[server->nfds - 1];
-            server->nfds--;
+            ServerDisconnectClient(server, fdsIndex);
+
             return;
         }
     }
@@ -289,8 +400,12 @@ void ServerRun(Server *server)
         {
             ServerTryAcceptConnection(server);
         }
+        // if (server->fds[1].revents & POLLRDNORM)
+        {
+            ServerHandleUDPClient(server);
+        }
 
-        for (int i = 1; i < server->nfds; i++)
+        for (int i = 2; i < server->nfds; i++)
         {
 
             if (server->fds[i].revents & (POLLRDNORM | POLLERR | POLLHUP))
@@ -311,8 +426,8 @@ void ServerStop(Server *server)
     closesocket(server->listenSocket);
     for (int i = 0; i < MAX_CLIENTS; i++)
     {
-        if (server->clients[i] != SOCKET_ERROR)
-            closesocket(server->clients[i]);
+        if (server->tcpClients[i] != SOCKET_ERROR)
+            closesocket(server->tcpClients[i]);
     }
     WSACleanup();
 }
