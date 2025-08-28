@@ -17,38 +17,6 @@ Client *client = NULL;
 
 void NetworkSetClient(Client *clientToSet) { client = clientToSet; }
 
-int NetworkTryConnect()
-{
-    int iResult = connect(client->socket, client->clientaddrinfo->ai_addr, (int)client->clientaddrinfo->ai_addrlen);
-    if (iResult == SOCKET_ERROR)
-    {
-        Sleep(5);
-        printf("Unable to connect to server!\n");
-        return FALSE;
-    }
-
-    if (client->socket == INVALID_SOCKET)
-    {
-        Sleep(5);
-        printf("Unable to connect to server!\n");
-        return FALSE;
-    }
-    ClientUDPPacketHeader header;
-    header.type = PACKET_ASSIGN_PLAYER;
-    header.size = 0;
-
-    u_long mode = 1;
-    ioctlsocket(client->socket, FIONBIO, &mode);
-    u_long udpmode = 1;
-    ioctlsocket(client->udpSocket, FIONBIO, &udpmode);
-
-    sendto(client->udpSocket, (char *)&header, sizeof(header), 0, (struct sockaddr *)&client->serveraddr, sizeof(client->serveraddr));
-    freeaddrinfo(client->clientaddrinfo);
-
-    printf("Connected to %s:%s\n", DEFAULT_HOST, DEFAULT_PORT);
-    return TRUE;
-}
-
 void NetworkPrepareBuffer() { eventBufferOffset = 0; }
 
 void NetworkRecieveUDPPacket()
@@ -61,11 +29,10 @@ void NetworkRecieveUDPPacket()
     {
         if (WSAGetLastError() == WSAEWOULDBLOCK)
         {
-            // No data yet, can do other tasks
         }
         else
         {
-            printf("[UDP] Error receiving.\n");
+            printf("[UDP] Error receiving, error :%d.\n", WSAGetLastError());
         }
         return;
     }
@@ -92,14 +59,28 @@ void NetworkRecieveUDPPacket()
     switch (header->type)
     {
     case PACKET_ENTITY_SNAPSHOT:
+    {
         ServerEntityState *entitiesPacket = (ServerEntityState *)payload;
         int count = payload_len / sizeof(ServerEntityState);
-        // printf("[UDP] Received %d entities from server\n", count);
-        GameUpdateNetworkEntities(entitiesPacket, count);
+        printf("[UDP] [UDP] EntitySnapshot: Received %d entities from server\n", count);
+
+        GameUpdateNetworkEntities(PACKET_ENTITY_SNAPSHOT, entitiesPacket, count);
 
         GameReconciliatePlayerPosition(header->lastProcessedMovementInput);
         GameResetClientsideBullets(header->lastProcessedBullet);
-        break;
+    }
+    break;
+    case PACKET_ENTITY_DELTAS:
+    {
+        ServerEntityState *entitiesPacket = (ServerEntityState *)payload;
+        int count = payload_len / sizeof(ServerEntityState);
+        printf("[UDP] EntityDeltas: Received %d entities from server\n", count);
+        GameUpdateNetworkEntities(PACKET_ENTITY_DELTAS, entitiesPacket, count);
+
+        GameReconciliatePlayerPosition(header->lastProcessedMovementInput);
+        GameResetClientsideBullets(header->lastProcessedBullet);
+    }
+    break;
     case PACKET_WAVE_SNAPSHOT:
         ServerWaveSnapshot *waveSnapshot = (ServerWaveSnapshot *)payload;
         GameUpdateNetworkWave(waveSnapshot);
@@ -146,8 +127,8 @@ void NetworkRecievePacket()
     if (recvlen <= 0)
         return; // disconnect or error
 
-    // printf("Received %d bytes, header.size: %d, header.type: %d\n", recvlen, header.size, header.type);
-    char buffer[MAX_PACKET_SIZE];
+    printf("[TCP] Received %d bytes, header.size: %d, header.type: %d\n", recvlen, header.size, header.type);
+    char *buffer = malloc(header.size);
     recvlen = recv(client->socket, buffer, header.size, 0);
     if (recvlen <= 0)
         return;
@@ -155,14 +136,27 @@ void NetworkRecievePacket()
     switch (header.type)
     {
     case PACKET_ENTITY_SNAPSHOT:
+    {
         ServerEntityState *entitiesPacket = (ServerEntityState *)buffer;
         int count = header.size / sizeof(ServerEntityState);
-        // printf("Received %d entities from server\n", count);
-        GameUpdateNetworkEntities(entitiesPacket, count);
+        printf("[TCP] Received %d entities from server\n", count);
+        GameUpdateNetworkEntities(PACKET_ENTITY_SNAPSHOT, entitiesPacket, count);
 
         GameReconciliatePlayerPosition(header.lastProcessedMovementInput);
         GameResetClientsideBullets(header.lastProcessedBullet);
-        break;
+    }
+    break;
+    case PACKET_ENTITY_DELTAS:
+    {
+        ServerEntityState *entitiesPacket = (ServerEntityState *)buffer;
+        int count = header.size / sizeof(ServerEntityState);
+        // printf("Received %d entities from server\n", count);p
+        GameUpdateNetworkEntities(PACKET_ENTITY_DELTAS, entitiesPacket, count);
+
+        GameReconciliatePlayerPosition(header.lastProcessedMovementInput);
+        GameResetClientsideBullets(header.lastProcessedBullet);
+    }
+    break;
     case PACKET_WAVE_SNAPSHOT:
         ServerWaveSnapshot *waveSnapshot = (ServerWaveSnapshot *)buffer;
         // printf("Received Wave Snapshot, wave:%d\n", waveSnapshot->wave);
@@ -234,6 +228,7 @@ void NetworkRecievePacket()
         printf("Unknown packet type %d\n", header.type);
         break;
     }
+    free(buffer);
 }
 
 void NetworkSendPacket()
@@ -331,4 +326,51 @@ int NetworkPushInputShootEvent(ClientInputShootEvent event)
     memcpy(eventBuffer + eventBufferOffset, &event, size);
     eventBufferOffset += size;
     return 0;
+}
+
+void NetworkSendUnreliableHeartbeat()
+{
+    char buffer[MAX_PACKET_SIZE];
+    ClientPacketHeader *header = (ClientPacketHeader *)buffer;
+    header->type = PACKET_HEARTBEAT;
+    header->size = 0;
+
+    int totalSize = sizeof(ClientPacketHeader) + header->size;
+    int sent = sendto(client->udpSocket, (char *)&buffer, totalSize, 0, (struct sockaddr *)&client->serveraddr, sizeof(client->serveraddr));
+
+    if (sent == SOCKET_ERROR)
+    {
+        printf("Packet send failed: %d\n", WSAGetLastError());
+    }
+    else if (sent != totalSize)
+    {
+        printf("Warning: not all bytes sent (%d/%d)\n", sent, totalSize);
+    }
+    else
+    {
+        printf("[NETWORK] Sent Packet: type=%d, payload=%d, total=%d\n",
+               header->type, header->size, totalSize);
+    }
+}
+
+int NetworkTryConnect()
+{
+    int iResult = connect(client->socket, client->clientaddrinfo->ai_addr, (int)client->clientaddrinfo->ai_addrlen);
+    if (iResult == SOCKET_ERROR || client->socket == INVALID_SOCKET)
+    {
+        Sleep(100);
+        printf("Unable to connect to server!\n");
+        return FALSE;
+    }
+    freeaddrinfo(client->clientaddrinfo);
+
+    u_long mode = 1;
+    ioctlsocket(client->socket, FIONBIO, &mode);
+    u_long udpmode = 1;
+    ioctlsocket(client->udpSocket, FIONBIO, &udpmode);
+
+    NetworkSendUnreliableHeartbeat();
+
+    printf("Connected to %s:%s\n", DEFAULT_HOST, DEFAULT_PORT);
+    return TRUE;
 }

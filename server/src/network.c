@@ -23,6 +23,8 @@ size_t unreliableEventBufferOffset = 0;
 
 Server *server;
 
+const size_t MAX_UDP_PAYLOAD_SIZE = MAX_PACKET_SIZE - sizeof(ServerUDPPacketHeader);
+
 void NetworkSetServer(Server *serverToSet) { server = serverToSet; }
 
 void NetworkPrepareEventBuffer() { eventBufferOffset = 0; }
@@ -234,7 +236,8 @@ void NetworkSetWaveState(ServerWaveSnapshot waveState)
 
 void NetworkSendEntitiesSnapshot()
 {
-    char buffer[MAX_PACKET_SIZE];
+    size_t payloadSizeNeeded = sizeof(ServerEntityState) * entitiesAmountToSend;
+    char *buffer = malloc(sizeof(ServerPacketHeader) + payloadSizeNeeded);
     ServerPacketHeader *header = (ServerPacketHeader *)buffer;
 
     ServerEntityState *entities = (ServerEntityState *)(buffer + sizeof(ServerPacketHeader));
@@ -245,17 +248,8 @@ void NetworkSendEntitiesSnapshot()
         memcpy(&entities[i], &entitiesToSend[i], sizeof(ServerEntityState));
     }
 
-    int payloadSize = count * sizeof(ServerEntityState);
-
-    if (payloadSize + sizeof(ServerPacketHeader) > MAX_PACKET_SIZE)
-    {
-        printf("Snapshot exceeds capacity\n");
-        return;
-    }
     header->type = PACKET_ENTITY_SNAPSHOT;
-    header->size = payloadSize;
-
-    int totalSize = sizeof(ServerPacketHeader) + payloadSize;
+    header->size = payloadSizeNeeded;
 
     // printf("[NETWORK] Broadcasting EntitiesSnapshot: size:%d, count:%d\n", header->size, count);
     for (int i = 0; i < MAX_CLIENTS; i++)
@@ -263,21 +257,23 @@ void NetworkSendEntitiesSnapshot()
         SOCKET client = server->tcpClients[i];
         if (client == INVALID_SOCKET)
             continue;
-        // printf("Sending to Client[%d], %d entities\n", i, count);
+        printf("Sending to Client[%d], %d entities\n", i, count);
         // printf("Sending to Client[%d], Entity[%d], .x=%d, .y=%d\n", i, entity, entities[entity].x, entities[entity].y);
         header->lastProcessedBullet = lastProcessedBullet[i];
         header->lastProcessedMovementInput = lastProcessedMovementInput[i];
-        int sent = send(client, buffer, totalSize, 0);
+        int sent = send(client, buffer, sizeof(buffer), 0);
         if (sent == SOCKET_ERROR)
         {
             printf("Failed to send entities to client[%d]: %d\n", i, WSAGetLastError());
         }
     }
+    free(buffer);
 }
 
 void NetworkSendWaveSnapshot()
 {
     char buffer[MAX_PACKET_SIZE];
+
     ServerPacketHeader *header = (ServerPacketHeader *)buffer;
 
     ServerWaveSnapshot *waveState = (ServerWaveSnapshot *)(buffer + sizeof(ServerPacketHeader));
@@ -314,6 +310,7 @@ void NetworkSendWaveSnapshot()
 
 void NetworkSendUnreliableWaveSnapshot()
 {
+    GameUpdateNetworkWave();
     char buffer[MAX_PACKET_SIZE];
     ServerUDPPacketHeader *header = (ServerUDPPacketHeader *)buffer;
     ServerWaveSnapshot *waveState = (ServerWaveSnapshot *)(buffer + sizeof(ServerUDPPacketHeader));
@@ -352,44 +349,98 @@ void NetworkSendUnreliableWaveSnapshot()
 }
 void NetworkSendUnreliableEntitiesSnapshot()
 {
-    char buffer[MAX_PACKET_SIZE];
-    ServerUDPPacketHeader *header = (ServerUDPPacketHeader *)buffer;
-    ServerEntityState *entities = (ServerEntityState *)(buffer + sizeof(ServerUDPPacketHeader));
+    GameUpdateNetworkEntities(PACKET_ENTITY_SNAPSHOT);
 
-    int count = entitiesAmountToSend;
-    for (int i = 0; i < entitiesAmountToSend; i++)
+    size_t payloadSizeNeeded = sizeof(ServerEntityState) * entitiesAmountToSend;
+
+    int payloads = (int)((payloadSizeNeeded + MAX_UDP_PAYLOAD_SIZE - 1) / MAX_UDP_PAYLOAD_SIZE);
+    int i = 0;
+    for (int payloadN = 0; payloadN < payloads; payloadN++)
     {
-        memcpy(&entities[i], &entitiesToSend[i], sizeof(ServerEntityState));
-    }
+        int count = 0;
 
-    int payloadSize = count * sizeof(ServerEntityState);
-    int totalSize = sizeof(ServerUDPPacketHeader) + payloadSize;
+        char buffer[MAX_PACKET_SIZE];
+        ServerUDPPacketHeader *header = (ServerUDPPacketHeader *)buffer;
+        ServerEntityState *entities = (ServerEntityState *)(buffer + sizeof(ServerUDPPacketHeader));
 
-    if (totalSize > MAX_PACKET_SIZE)
-    {
-        printf("Snapshot exceeds capacity\n");
-        return;
-    }
-    header->type = PACKET_ENTITY_SNAPSHOT;
-    header->size = payloadSize;
-
-    // printf("[NETWORK] Broadcasting EntitiesSnapshot: size:%d, count:%d\n", header->size, count);
-    for (int i = 0; i < MAX_CLIENTS; i++)
-    {
-        UDPClient *client = &server->udpClients[i];
-        if (!client->active)
-            continue;
-        header->sequence = client->nextSeq++;
-        header->lastProcessedBullet = lastProcessedBullet[i];
-        header->lastProcessedMovementInput = lastProcessedMovementInput[i];
-        int sent = sendto(server->fds[1].fd, buffer, totalSize, 0, (struct sockaddr *)&client->addr, sizeof(client->addr));
-        if (sent == SOCKET_ERROR)
+        size_t remainingPayloadSize = MAX_PACKET_SIZE - sizeof(ServerUDPPacketHeader);
+        for (; i < entitiesAmountToSend && remainingPayloadSize > sizeof(ServerEntityState); i++, remainingPayloadSize -= sizeof(ServerEntityState), count++)
         {
-            printf("Failed to send entities to client[%d]: %d\n", i, WSAGetLastError());
+            memcpy(&entities[count], &entitiesToSend[i], sizeof(ServerEntityState));
         }
-        else
+
+        int payloadSize = count * sizeof(ServerEntityState);
+        int totalSize = sizeof(ServerUDPPacketHeader) + payloadSize;
+
+        header->type = PACKET_ENTITY_SNAPSHOT;
+        header->size = payloadSize;
+
+        for (int i = 0; i < MAX_CLIENTS; i++)
         {
-            // printf("Sending to Client[%d] Addr:%s:%d, %d entities\n", i, inet_ntoa(client->addr.sin_addr), ntohs(client->addr.sin_port), count);
+            UDPClient *client = &server->udpClients[i];
+            if (!client->active)
+                continue;
+            header->sequence = client->nextSeq++;
+            header->lastProcessedBullet = lastProcessedBullet[i];
+            header->lastProcessedMovementInput = lastProcessedMovementInput[i];
+            int sent = sendto(server->fds[1].fd, buffer, totalSize, 0, (struct sockaddr *)&client->addr, sizeof(client->addr));
+            if (sent == SOCKET_ERROR)
+            {
+                printf("Failed to send entities to client[%d]: %d\n", i, WSAGetLastError());
+            }
+            else
+            {
+                printf("Sending to Client[%d] Addr:%s:%d, %d entities\n", i, inet_ntoa(client->addr.sin_addr), ntohs(client->addr.sin_port), count);
+            }
+        }
+    }
+}
+void NetworkSendUnreliableEntitiesDeltas()
+{
+    GameUpdateNetworkEntities(PACKET_ENTITY_DELTAS);
+
+    size_t payloadSizeNeeded = sizeof(ServerEntityState) * entitiesAmountToSend;
+
+    int payloads = (int)((payloadSizeNeeded + MAX_UDP_PAYLOAD_SIZE - 1) / MAX_UDP_PAYLOAD_SIZE);
+    int i = 0;
+    for (int payloadN = 0; payloadN < payloads; payloadN++)
+    {
+        int count = 0;
+
+        char buffer[MAX_PACKET_SIZE];
+        ServerUDPPacketHeader *header = (ServerUDPPacketHeader *)buffer;
+        ServerEntityState *entities = (ServerEntityState *)(buffer + sizeof(ServerUDPPacketHeader));
+
+        size_t remainingPayloadSize = MAX_UDP_PAYLOAD_SIZE;
+        for (; i < entitiesAmountToSend && remainingPayloadSize > sizeof(ServerEntityState); i++, remainingPayloadSize -= sizeof(ServerEntityState), count++)
+        {
+            memcpy(&entities[count], &entitiesToSend[i], sizeof(ServerEntityState));
+        }
+
+        int payloadSize = count * sizeof(ServerEntityState);
+        int totalSize = sizeof(ServerUDPPacketHeader) + payloadSize;
+
+        header->type = PACKET_ENTITY_DELTAS;
+        header->size = payloadSize;
+
+        // printf("[NETWORK] Broadcasting EntitiesDeltas: size:%d, count:%d\n", header->size, count);
+        for (int i = 0; i < MAX_CLIENTS; i++)
+        {
+            UDPClient *client = &server->udpClients[i];
+            if (!client->active)
+                continue;
+            header->sequence = client->nextSeq++;
+            header->lastProcessedBullet = lastProcessedBullet[i];
+            header->lastProcessedMovementInput = lastProcessedMovementInput[i];
+            int sent = sendto(server->fds[1].fd, buffer, totalSize, 0, (struct sockaddr *)&client->addr, sizeof(client->addr));
+            if (sent == SOCKET_ERROR)
+            {
+                printf("Failed to send entities to client[%d]: %d\n", i, WSAGetLastError());
+            }
+            else
+            {
+                // printf("Sending to Client[%d] Addr:%s:%d, %d entities\n", i, inet_ntoa(client->addr.sin_addr), ntohs(client->addr.sin_port), count);
+            }
         }
     }
 }

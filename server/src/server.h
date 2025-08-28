@@ -14,6 +14,8 @@ typedef struct
 
     uint32_t nextSeq;
     uint32_t lastAckedSeq;
+
+    double timeBetweenHeartbeat;
 } UDPClient;
 
 typedef struct Server

@@ -10,7 +10,9 @@ typedef enum
     PACKET_INPUT_EVENT,
     PACKET_SERVER_EVENTS,
     PACKET_ENTITY_SNAPSHOT,
+    PACKET_ENTITY_DELTAS,
     PACKET_WAVE_SNAPSHOT,
+    PACKET_HEARTBEAT,
 } PACKET_TYPE;
 
 typedef struct
@@ -71,6 +73,7 @@ typedef struct
     uint8_t type;
     uint16_t size;
 } __attribute__((packed)) ServerUDPPacketHeader;
+
 typedef struct
 {
     uint8_t type;

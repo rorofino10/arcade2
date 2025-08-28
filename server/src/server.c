@@ -18,13 +18,20 @@ const double TPS = 60.0f;
 const double timeBetweenTicks = 1.0 / TPS;
 double elapsedTimeBetweenTicks = 0.0f;
 
-const double SnapshotTPS = 10.0f;
-const double timeBetweenSnapshotTicks = 1.0 / SnapshotTPS;
+// const double SnapshotTPS = 10.0f;
+// const double timeBetweenSnapshotTicks = 1.0f / SnapshotTPS;
+const double timeBetweenSnapshotTicks = 2.0f;
 double elapsedTimeBetweenSnapshotTicks = 0.0f;
+
+const double DeltaTPS = 10.0f;
+const double timeBetweenDeltaTicks = 1.0f / DeltaTPS;
+double elapsedTimeBetweenDeltaTicks = 0.0f;
 
 const double EventTPS = 60.0f;
 const double timeBetweenEventTicks = 1.0 / EventTPS;
 double elapsedTimeBetweenEventTicks = 0.0f;
+
+const double timeBetweenHeartbeatDisconnect = 5.0f;
 
 void ServerTryTick()
 {
@@ -43,6 +50,17 @@ void ServerTrySnapshotTick(Server *server)
     {
         elapsedTimeBetweenSnapshotTicks -= timeBetweenSnapshotTicks;
         NetworkSendUnreliableEntitiesSnapshot();
+        // NetworkSendUnreliableWaveSnapshot();
+    }
+}
+
+void ServerTryDeltaTick(Server *server)
+{
+
+    while (elapsedTimeBetweenDeltaTicks >= timeBetweenDeltaTicks)
+    {
+        elapsedTimeBetweenDeltaTicks -= timeBetweenDeltaTicks;
+        NetworkSendUnreliableEntitiesDeltas();
         NetworkSendUnreliableWaveSnapshot();
         // NetworkSendEntitiesSnapshot();
         // NetworkSendWaveSnapshot();
@@ -201,6 +219,8 @@ void ServerTryAcceptConnection(Server *server)
             printf("New client connected: %d\n", i);
             uint8_t playerID = GameAssignPlayerToClient(i);
             NetworkSendAssignedPlayerID(i, playerID);
+            NetworkSendEntitiesSnapshot();
+            NetworkSendWaveSnapshot();
             return;
         }
     }
@@ -239,6 +259,9 @@ int FindOrAddUDPClient(Server *server, struct sockaddr_in *from)
         client->lastAckedSeq = 0;
         client->nextSeq = 1;
         client->active = TRUE;
+        char ip[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &from->sin_addr, ip, sizeof(ip));
+        printf("New client from %s:%d\n", ip, ntohs(from->sin_port));
         return i;
     }
     printf("No space to add.\n");
@@ -257,22 +280,22 @@ void ServerHandleUDPClient(Server *server)
 
     if (bytes > 0)
     {
-        char ip[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &from.sin_addr, ip, sizeof(ip));
-        printf("New client from %s:%d\n", ip, ntohs(from.sin_port));
+
         ClientUDPPacketHeader *header = (ClientUDPPacketHeader *)buffer;
         // printf("[SERVER] Received UDP Packet, type: %d, size:%d", header->type, header->size);
         int clientIdx = FindOrAddUDPClient(server, &from);
         if (clientIdx == -1)
             return;
-        char sendBuf[MAX_PACKET_SIZE];
-        ServerUDPPacketHeader *sendheader = (ServerUDPPacketHeader *)sendBuf;
-        sendheader->type = PACKET_ASSIGN_PLAYER;
-        sendheader->sequence = server->udpClients[clientIdx].nextSeq++;
-        sendheader->lastProcessedBullet = lastProcessedBullet[clientIdx];
-        sendheader->lastProcessedMovementInput = lastProcessedMovementInput[clientIdx];
-        sendheader->size = 0;
-        int sent = sendto(server->fds[1].fd, sendBuf, sizeof(ServerUDPPacketHeader), 0, (struct sockaddr *)&server->udpClients[clientIdx].addr, sizeof(server->udpClients[clientIdx].addr));
+        server->udpClients[clientIdx].timeBetweenHeartbeat = 0.0f; // Reset timer, received a packet
+
+        // char sendBuf[MAX_PACKET_SIZE];
+        // ServerUDPPacketHeader *sendheader = (ServerUDPPacketHeader *)sendBuf;
+        // sendheader->type = PACKET_ASSIGN_PLAYER;
+        // sendheader->sequence = server->udpClients[clientIdx].nextSeq++;
+        // sendheader->lastProcessedBullet = lastProcessedBullet[clientIdx];
+        // sendheader->lastProcessedMovementInput = lastProcessedMovementInput[clientIdx];
+        // sendheader->size = 0;
+        // int sent = sendto(server->fds[1].fd, sendBuf, sizeof(ServerUDPPacketHeader), 0, (struct sockaddr *)&server->udpClients[clientIdx].addr, sizeof(server->udpClients[clientIdx].addr));
         // printf("Sending to Client[%d] Addr:%s:%d\n", clientIdx, inet_ntoa(server->udpClients[clientIdx].addr.sin_addr), ntohs(server->udpClients[clientIdx].addr.sin_port));
     }
 }
@@ -386,6 +409,17 @@ void ServerRun(Server *server)
         elapsedTimeBetweenTicks += deltaTime;
         elapsedTimeBetweenSnapshotTicks += deltaTime;
         elapsedTimeBetweenEventTicks += deltaTime;
+        elapsedTimeBetweenDeltaTicks += deltaTime;
+
+        for (int i = 0; i < MAX_CLIENTS; i++)
+        {
+            UDPClient *client = &server->udpClients[i];
+            if (!client->active)
+                continue;
+            client->timeBetweenHeartbeat += deltaTime;
+            if (client->timeBetweenHeartbeat >= timeBetweenHeartbeatDisconnect)
+                ServerDisconnectClient(server, i + 2);
+        }
 
         int iResult;
 
@@ -400,7 +434,7 @@ void ServerRun(Server *server)
         {
             ServerTryAcceptConnection(server);
         }
-        // if (server->fds[1].revents & POLLRDNORM)
+        if (server->fds[1].revents & POLLRDNORM)
         {
             ServerHandleUDPClient(server);
         }
@@ -417,6 +451,7 @@ void ServerRun(Server *server)
 
         ServerTrySnapshotTick(server);
         ServerTryEventTick(server);
+        ServerTryDeltaTick(server);
         ServerTryTick();
     }
 }

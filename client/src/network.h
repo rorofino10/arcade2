@@ -15,6 +15,8 @@ void NetworkSendPacket();
 void NetworkRecievePacket();
 void NetworkRecieveUDPPacket();
 
+void NetworkSendUnreliableHeartbeat();
+
 int NetworkPushInputShootEvent(ClientInputShootEvent event);
 int NetworkPushInputAuthorativeMoveEvent(ClientInputAuthorativeMoveEvent event);
 int NetworkPushInputMoveEvent(ClientInputEvent event);

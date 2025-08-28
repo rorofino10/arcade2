@@ -17,6 +17,7 @@ void NetworkSendWaveSnapshot();
 void NetworkSendAssignedPlayerID(int clientIndex, uint8_t playerID);
 
 void NetworkSendUnreliableEntitiesSnapshot();
+void NetworkSendUnreliableEntitiesDeltas();
 void NetworkSendUnreliableWaveSnapshot();
 void NetworkSendUnreliableEventPacket();
 int NetworkPushUnreliableEntityFacingDelta(ServerEntityFacingDelta delta);

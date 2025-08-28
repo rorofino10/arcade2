@@ -41,6 +41,9 @@ const double EventTPS = 30.0f;
 const double timeBetweenEventTicks = 1.0 / EventTPS;
 double elapsedTimeBetweenEventTicks = 0.0f;
 
+const double timeBetweenHeartbeat = 2.0;
+double elapsedTimeBetweenHeartbeat = 0.0f;
+
 typedef struct WaveManager
 {
     uint8_t wave;
@@ -605,39 +608,42 @@ void GameUpdatePlayerID(uint8_t newPlayerID)
     playerID = newPlayerID;
 }
 
-void GameUpdateNetworkEntities(ServerEntityState *networkEntity, int count)
+void GameUpdateNetworkEntities(int type, ServerEntityState *networkEntity, int count)
 {
-    for (int i = 0; i < entitiesCount; i++)
-    {
-        entities[i].isAlive = false;
-    }
+    if (type == PACKET_ENTITY_SNAPSHOT)
+        for (int i = 0; i < entitiesCount; i++)
+        {
+            entities[i].isAlive = false;
+        }
 
     for (int i = 0; i < count; i++)
     {
-
-        entities[networkEntity[i].id].position.x = networkEntity[i].x;
-        entities[networkEntity[i].id].position.y = networkEntity[i].y;
-        entities[networkEntity[i].id].direction.x = networkEntity[i].vx;
-        entities[networkEntity[i].id].direction.y = networkEntity[i].vy;
-        if (networkEntity[i].type != ENTITY_RED_ENEMY && networkEntity[i].type != ENTITY_PLAYER)
-            entities[networkEntity[i].id].facing = DEFAULT_ENTITY_FACING;
+        ServerEntityState *ne = &networkEntity[i];
+        EntityID neID = ne->id;
+        Entity *entity = &entities[neID];
+        entity->position.x = ne->x;
+        entity->position.y = ne->y;
+        entity->direction.x = ne->vx;
+        entity->direction.y = ne->vy;
+        if (ne->type != ENTITY_RED_ENEMY && ne->type != ENTITY_PLAYER)
+            entity->facing = DEFAULT_ENTITY_FACING;
         // General attributes
-        entities[networkEntity[i].id].speed = networkEntity[i].speed;
-        entities[networkEntity[i].id].type = networkEntity[i].type;
+        entity->speed = ne->speed;
+        entity->type = ne->type;
 
         // Default implementation
-        entities[networkEntity[i].id].size = DEFAULT_ENTITY_SIZE;
-        entities[networkEntity[i].id].parent = networkEntity->id;
-        entities[networkEntity[i].id].lifetime = 1.0f;
+        entity->size = DEFAULT_ENTITY_SIZE;
+        entity->parent = networkEntity->id;
+        entity->lifetime = 1.0f;
 
-        if (networkEntity[i].type == ENTITY_BULLET)
+        if (ne->type == ENTITY_BULLET)
         {
-            entities[networkEntity[i].id].size = DEFAULT_BULLET_SIZE;
-            entities[networkEntity[i].id].facing = entities[networkEntity[i].id].direction;
+            entity->size = DEFAULT_BULLET_SIZE;
+            entity->facing = entity->direction;
         }
 
         // Snapshots are only alive entities
-        entities[networkEntity[i].id].isAlive = true;
+        entity->isAlive = true;
     }
 }
 void GameUpdateNetworkWave(ServerWaveSnapshot *waveSnapshot)
@@ -654,6 +660,13 @@ void UpdateNetwork()
         elapsedTimeBetweenEventTicks -= timeBetweenEventTicks;
 
         NetworkSendPacket();
+    }
+
+    while (elapsedTimeBetweenHeartbeat >= timeBetweenHeartbeat)
+    {
+        elapsedTimeBetweenHeartbeat -= timeBetweenHeartbeat;
+
+        NetworkSendUnreliableHeartbeat();
     }
 
     // always recv
@@ -858,6 +871,7 @@ void GameRun()
         prevTime = currentTime;
 
         elapsedTimeBetweenEventTicks += deltaTime;
+        elapsedTimeBetweenHeartbeat += deltaTime;
 
         switch (gameState)
         {

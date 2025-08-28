@@ -14,7 +14,7 @@ struct ServerPowerupEvent;
 void GameRun();
 
 void GameUpdatePlayerID(uint8_t newPlayerID);
-void GameUpdateNetworkEntities(struct ServerEntityState *networkEntity, int count);
+void GameUpdateNetworkEntities(int type, struct ServerEntityState *networkEntity, int count);
 void GameUpdateNetworkWave(struct ServerWaveSnapshot *waveSnapshot);
 
 void GameHandleEntityDiedEvent(struct ServerEntityDiedEvent *event);
