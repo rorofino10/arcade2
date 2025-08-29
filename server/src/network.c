@@ -57,7 +57,7 @@ int NetworkPushBulletSpawnEvent(ServerBulletSpawnEvent event)
 
 int NetworkPushEntityDiedEvent(ServerEntityDiedEvent event)
 {
-
+    printf("[NETWORK] Pushing EntityDiedEvent\n");
     const size_t capacity = MAX_PACKET_SIZE - sizeof(ServerPacketHeader);
     const size_t size = sizeof(ServerEntityDiedEvent);
     const size_t need = sizeof(ServerEventHeader) + size;
@@ -139,6 +139,7 @@ void NetworkSendEventPacket()
         return;
     int totalSize = sizeof(ServerPacketHeader) + eventBufferOffset;
     char *buffer = malloc(totalSize);
+    printf("[NETWORK] Sending ReliableEventPacket bytes: %d\n", totalSize);
 
     ServerPacketHeader *header = (ServerPacketHeader *)buffer;
 

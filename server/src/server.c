@@ -18,8 +18,6 @@ const double TPS = 60.0f;
 const double timeBetweenTicks = 1.0 / TPS;
 double elapsedTimeBetweenTicks = 0.0f;
 
-// const double SnapshotTPS = 10.0f;
-// const double timeBetweenSnapshotTicks = 1.0f / SnapshotTPS;
 const double timeBetweenSnapshotTicks = 2.0f;
 double elapsedTimeBetweenSnapshotTicks = 0.0f;
 

@@ -37,6 +37,10 @@ const EntityID DEFAULT_BLUEENEMIES_INCREASE = 1;
 const COOLDOWN DEFAULT_WAVE_REFRESH_COOLDOWN = 2.0f;
 const COOLDOWN DEFAULT_SPAWN_INTERVAL = 0.0f;
 
+const uint16_t PLAYER_SAFE_RADIUS = 500;
+const uint16_t ENTITY_SPAWN_RADIUS = 700;
+const _float32_t NEUTRAL_SHOOT_RADIUS = 80.0f;
+
 typedef struct WaveManager
 {
     uint8_t wave;
@@ -88,10 +92,6 @@ WaveManager waveManager = {
     .blueEnemiesLeftToSpawn = 0,
     .blueEnemiesRemaining = 0,
 };
-
-const uint16_t PLAYER_SAFE_RADIUS = 500;
-const uint16_t ENTITY_SPAWN_RADIUS = 700;
-const _float32_t NEUTRAL_SHOOT_RADIUS = 80.0f;
 
 typedef enum GameState
 {

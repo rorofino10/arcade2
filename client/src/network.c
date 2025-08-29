@@ -69,7 +69,7 @@ void NetworkRecieveUDPPacket()
     {
         ServerEntityState *entitiesPacket = (ServerEntityState *)payload;
         int count = payload_len / sizeof(ServerEntityState);
-        printf("[UDP] [UDP] EntitySnapshot: Received %d entities from server\n", count);
+        // printf("[UDP] EntitySnapshot: Received %d entities from server\n", count);
 
         GameUpdateNetworkEntities(PACKET_ENTITY_SNAPSHOT, entitiesPacket, count);
 
@@ -81,7 +81,7 @@ void NetworkRecieveUDPPacket()
     {
         ServerEntityState *entitiesPacket = (ServerEntityState *)payload;
         int count = payload_len / sizeof(ServerEntityState);
-        printf("[UDP] EntityDeltas: Received %d entities from server\n", count);
+        // printf("[UDP] EntityDeltas: Received %d entities from server\n", count);
         GameUpdateNetworkEntities(PACKET_ENTITY_DELTAS, entitiesPacket, count);
 
         GameReconciliatePlayerPosition(header->lastProcessedMovementInput);
@@ -95,8 +95,8 @@ void NetworkRecieveUDPPacket()
     case PACKET_SERVER_EVENTS:
         size_t offset = 0;
         GameResetClientsideBullets(header->lastProcessedBullet);
-        printf("[UDP] Received %d bytes, size:%d, type:%d, expected:%d\n", recvlen, payload_len, header->type, expected_len);
-        printf("[UDP] Received UnreliableEventPacket from Server\n");
+        // printf("[UDP] Received %d bytes, size:%d, type:%d, expected:%d\n", recvlen, payload_len, header->type, expected_len);
+        // printf("[UDP] Received UnreliableEventPacket from Server\n");
 
         while (offset < header->size)
         {
@@ -105,14 +105,14 @@ void NetworkRecieveUDPPacket()
 
             char *edata = payload + offset;
             offset += eheader->size;
-            printf("[UDP] Parsing UnreliableEventPacket type:%d, size:%d\n", eheader->type, eheader->size);
+            // printf("[UDP] Parsing UnreliableEventPacket type:%d, size:%d\n", eheader->type, eheader->size);
 
             switch (eheader->type)
             {
             case SERVER_DELTA_ENTITY_FACING:
             {
                 ServerEntityFacingDelta *delta = (ServerEntityFacingDelta *)edata;
-                printf("[SERVER]: EntityFacingDelta id:[%d], fx:%f, fy:%f\n", delta->id, delta->fx, delta->fy);
+                // printf("[SERVER]: EntityFacingDelta id:[%d], fx:%f, fy:%f\n", delta->id, delta->fx, delta->fy);
                 GameHandleEntityFacingDelta(delta);
             }
             break;
