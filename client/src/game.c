@@ -856,7 +856,7 @@ void GameRun()
     SetTargetFPS(60);
 
     entities = calloc(entitiesCount, sizeof(Entity));
-    clientsideEntities = calloc(entitiesCount, sizeof(Entity));
+    clientsideEntities = calloc(entitiesCount, sizeof(Entity)); // explosions and predicted bullets
 
     LoadAllTextures();
     LoadAllSoundEffects();

@@ -65,23 +65,10 @@ int ClientInit(Client *client)
         WSACleanup();
         return 1;
     }
-    // struct sockaddr_in localAddr;
-    // ZeroMemory(&localAddr, sizeof(localAddr));
-    // localAddr.sin_family = AF_INET;
-    // localAddr.sin_addr.s_addr = INADDR_ANY; // listen on all interfaces
-    // localAddr.sin_port = htons(5001);       // client listening port
 
-    // if (bind(client->udpSocket, (struct sockaddr *)&localAddr, sizeof(localAddr)) == SOCKET_ERROR)
-    // {
-    //     printf("bind() failed: %d\n", WSAGetLastError());
-    //     closesocket(client->udpSocket);
-    //     WSACleanup();
-    //     return 1;
-    // }
-
-    // printf("UDP client listening on port %d...\n", ntohs(localAddr.sin_port));
     client->lastReceivedSequence = 0;
     NetworkSetClient(client);
+    return 0;
 }
 
 void ClientRun(Client *client)
@@ -102,7 +89,8 @@ int main(int argc, char **argv)
 {
     Client client;
 
-    ClientInit(&client);
+    if (ClientInit(&client) != 0)
+        return 1;
 
     ClientRun(&client);
 

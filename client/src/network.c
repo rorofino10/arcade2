@@ -10,14 +10,19 @@
 #include "packet.h"
 #include "game.h"
 
-char eventBuffer[MAX_PACKET_SIZE];
+char *eventBuffer = NULL;
 size_t eventBufferOffset = 0;
 
 Client *client = NULL;
 
 void NetworkSetClient(Client *clientToSet) { client = clientToSet; }
 
-void NetworkPrepareBuffer() { eventBufferOffset = 0; }
+void NetworkPrepareBuffer()
+{
+    free(eventBuffer);
+    eventBuffer = NULL;
+    eventBufferOffset = 0;
+}
 
 void NetworkRecieveUDPPacket()
 {
@@ -56,6 +61,8 @@ void NetworkRecieveUDPPacket()
         return;
     }
     client->lastReceivedSequence = header->sequence;
+
+    // Handle Packet
     switch (header->type)
     {
     case PACKET_ENTITY_SNAPSHOT:
@@ -169,7 +176,7 @@ void NetworkRecievePacket()
         break;
     case PACKET_SERVER_EVENTS:
         size_t offset = 0;
-        GameResetClientsideBullets(header.lastProcessedBullet);
+        // GameResetClientsideBullets(header.lastProcessedBullet);
 
         while (offset < header.size)
         {
@@ -233,17 +240,18 @@ void NetworkRecievePacket()
 
 void NetworkSendPacket()
 {
-    char buffer[MAX_PACKET_SIZE];
+
+    if (eventBufferOffset <= 0)
+        return;
+    int totalSize = sizeof(ClientPacketHeader) + eventBufferOffset;
+
+    char *buffer = malloc(totalSize);
     ClientPacketHeader *header = (ClientPacketHeader *)buffer;
+    char *payload = (char *)(buffer + sizeof(ClientPacketHeader));
+
     header->type = PACKET_INPUT_EVENT;
     header->size = eventBufferOffset;
 
-    if (header->size <= 0)
-        return;
-
-    int totalSize = sizeof(ClientPacketHeader) + header->size;
-
-    char *payload = (char *)(buffer + sizeof(ClientPacketHeader));
     memcpy(payload, eventBuffer, header->size);
 
     int sent = send(client->socket, buffer, totalSize, 0);
@@ -260,9 +268,11 @@ void NetworkSendPacket()
         printf("[NETWORK] Sent Packet: type=%d, payload=%d, total=%d\n",
                header->type, header->size, totalSize);
     }
+    free(buffer);
     NetworkPrepareBuffer();
 }
 
+// Not used
 int NetworkPushInputAuthorativeMoveEvent(ClientInputAuthorativeMoveEvent event)
 {
     const size_t capacity = MAX_PACKET_SIZE - sizeof(ClientPacketHeader);
@@ -289,10 +299,8 @@ int NetworkPushInputMoveEvent(ClientInputEvent event)
     const size_t capacity = MAX_PACKET_SIZE - sizeof(ClientPacketHeader);
     const size_t size = sizeof(ClientInputEvent);
     const size_t need = sizeof(ClientPacketHeader) + size;
-    printf("Pushing ClientInputMoveEvent, %d bytes\n", size);
 
-    if (need > capacity || eventBufferOffset + need > capacity)
-        return 1;
+    eventBuffer = realloc(eventBuffer, eventBufferOffset + need);
 
     ClientEventHeader eventHeader;
     eventHeader.type = CLIENT_EVENT_INPUT_MOVE;
@@ -310,19 +318,16 @@ int NetworkPushInputShootEvent(ClientInputShootEvent event)
     const size_t capacity = MAX_PACKET_SIZE - sizeof(ClientPacketHeader);
     const size_t size = sizeof(ClientInputShootEvent);
     const size_t need = sizeof(ClientPacketHeader) + size;
-    printf("Pushing ClientInputShootEvent, %d bytes\n", size);
 
-    if (need > capacity || eventBufferOffset + need > capacity)
-        return 1;
+    eventBuffer = realloc(eventBuffer, eventBufferOffset + need);
 
     ClientEventHeader eventHeader;
     eventHeader.type = CLIENT_EVENT_INPUT_SHOOT;
     eventHeader.size = size;
-    printf("[NETWORK]: Pushing ClientEventHeader type: %d, size: %d\n", eventHeader.type, eventHeader.size);
+
     memcpy(eventBuffer + eventBufferOffset, &eventHeader, sizeof(eventHeader));
     eventBufferOffset += sizeof(eventHeader);
 
-    printf("[NETWORK]: Pushing ClientInputShootEvent dx: %f, dy: %f, sequence: %d\n", event.dx, event.dy, event.bulletSequence);
     memcpy(eventBuffer + eventBufferOffset, &event, size);
     eventBufferOffset += size;
     return 0;
@@ -358,7 +363,7 @@ int NetworkTryConnect()
     int iResult = connect(client->socket, client->clientaddrinfo->ai_addr, (int)client->clientaddrinfo->ai_addrlen);
     if (iResult == SOCKET_ERROR || client->socket == INVALID_SOCKET)
     {
-        Sleep(100);
+        Sleep(100); // Sleep isn't the best but oh well.
         printf("Unable to connect to server!\n");
         return FALSE;
     }

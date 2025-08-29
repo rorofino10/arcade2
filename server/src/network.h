@@ -19,14 +19,14 @@ void NetworkSendAssignedPlayerID(int clientIndex, uint8_t playerID);
 void NetworkSendUnreliableEntitiesSnapshot();
 void NetworkSendUnreliableEntitiesDeltas();
 void NetworkSendUnreliableWaveSnapshot();
-void NetworkSendUnreliableEventPacket();
 int NetworkPushUnreliableEntityFacingDelta(ServerEntityFacingDelta delta);
+
+void NetworkSendUnreliableEventPacket();
 
 int NetworkPushEntityDiedEvent(ServerEntityDiedEvent event);
 int NetworkPushPlayerCanShootEvent(ServerPlayerCanShootEvent event);
 int NetworkPushNewEntityEvent(ServerEntityState entity);
 int NetworkPushBulletSpawnEvent(ServerBulletSpawnEvent event);
-int NetworkPushEntityFacingDelta(ServerEntityFacingDelta delta);
 int NetworkPushPowerupEvent(ServerPowerupEvent event);
 
 void NetworkPrepareEventBuffer();

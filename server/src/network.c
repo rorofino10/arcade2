@@ -15,7 +15,7 @@ int entitiesAmountToSend = 0;
 
 ServerWaveSnapshot waveStateToSend;
 
-char eventBuffer[MAX_PACKET_SIZE];
+char *eventBuffer = NULL;
 size_t eventBufferOffset = 0;
 
 char unreliableEventBuffer[MAX_PACKET_SIZE];
@@ -27,7 +27,12 @@ const size_t MAX_UDP_PAYLOAD_SIZE = MAX_PACKET_SIZE - sizeof(ServerUDPPacketHead
 
 void NetworkSetServer(Server *serverToSet) { server = serverToSet; }
 
-void NetworkPrepareEventBuffer() { eventBufferOffset = 0; }
+void NetworkPrepareEventBuffer()
+{
+    free(eventBuffer);
+    eventBuffer = NULL;
+    eventBufferOffset = 0;
+}
 void NetworkPrepareUnreliableEventBuffer() { unreliableEventBufferOffset = 0; }
 
 int NetworkPushBulletSpawnEvent(ServerBulletSpawnEvent event)
@@ -35,14 +40,13 @@ int NetworkPushBulletSpawnEvent(ServerBulletSpawnEvent event)
     const size_t capacity = MAX_PACKET_SIZE - sizeof(ServerPacketHeader);
     const size_t size = sizeof(ServerBulletSpawnEvent);
     const size_t need = sizeof(ServerEventHeader) + size;
-    printf("Pushing BulletSpawnEvent, %d bytes\n", size);
-
-    if (need > capacity || eventBufferOffset + need > capacity)
-        return 1;
 
     ServerEventHeader eventHeader;
     eventHeader.type = SERVER_EVENT_BULLET_SPAWN;
     eventHeader.size = size;
+
+    eventBuffer = realloc(eventBuffer, eventBufferOffset + need);
+
     memcpy(eventBuffer + eventBufferOffset, &eventHeader, sizeof(eventHeader));
     eventBufferOffset += sizeof(eventHeader);
 
@@ -57,10 +61,8 @@ int NetworkPushEntityDiedEvent(ServerEntityDiedEvent event)
     const size_t capacity = MAX_PACKET_SIZE - sizeof(ServerPacketHeader);
     const size_t size = sizeof(ServerEntityDiedEvent);
     const size_t need = sizeof(ServerEventHeader) + size;
-    printf("Pushing Entity Died Event, %d bytes\n", size);
 
-    if (need > capacity || eventBufferOffset + need > capacity)
-        return 1;
+    eventBuffer = realloc(eventBuffer, eventBufferOffset + need);
 
     ServerEventHeader eventHeader;
     eventHeader.type = SERVER_EVENT_ENTITY_DIED;
@@ -78,10 +80,8 @@ int NetworkPushPlayerCanShootEvent(ServerPlayerCanShootEvent event)
     const size_t capacity = MAX_PACKET_SIZE - sizeof(ServerPacketHeader);
     const size_t size = sizeof(ServerPlayerCanShootEvent);
     const size_t need = sizeof(ServerEventHeader) + size;
-    printf("Pushing PlayerCanShootEvent, %d bytes\n", size);
 
-    if (need > capacity || eventBufferOffset + need > capacity)
-        return 1;
+    eventBuffer = realloc(eventBuffer, eventBufferOffset + need);
 
     ServerEventHeader eventHeader;
     eventHeader.type = SERVER_EVENT_PLAYER_CAN_SHOOT;
@@ -99,10 +99,8 @@ int NetworkPushNewEntityEvent(ServerEntityState entity)
     const size_t capacity = MAX_PACKET_SIZE - sizeof(ServerPacketHeader);
     const size_t size = sizeof(ServerEntityState);
     const size_t need = sizeof(ServerEventHeader) + size;
-    printf("Pushing NewEntityEvent, %d bytes\n", size);
 
-    if (need > capacity || eventBufferOffset + need > capacity)
-        return 1;
+    eventBuffer = realloc(eventBuffer, eventBufferOffset + need);
 
     ServerEventHeader eventHeader;
     eventHeader.type = SERVER_EVENT_NEW_ENTITY;
@@ -120,10 +118,8 @@ int NetworkPushPowerupEvent(ServerPowerupEvent event)
     const size_t capacity = MAX_PACKET_SIZE - sizeof(ServerPacketHeader);
     const size_t size = sizeof(ServerPowerupEvent);
     const size_t need = sizeof(ServerEventHeader) + size;
-    printf("Pushing PowerupEvent, %d bytes\n", size);
 
-    if (need > capacity || eventBufferOffset + need > capacity)
-        return 1;
+    eventBuffer = realloc(eventBuffer, eventBufferOffset + need);
 
     ServerEventHeader eventHeader;
     eventHeader.type = SERVER_EVENT_POWERUP;
@@ -135,41 +131,19 @@ int NetworkPushPowerupEvent(ServerPowerupEvent event)
     eventBufferOffset += size;
     return 0;
 }
-int NetworkPushEntityFacingDelta(ServerEntityFacingDelta delta)
-{
-    const size_t capacity = MAX_PACKET_SIZE - sizeof(ServerPacketHeader);
-    const size_t size = sizeof(ServerEntityFacingDelta);
-    const size_t need = sizeof(ServerEventHeader) + size;
-    printf("Pushing EntityFacingDelta, %d bytes\n", size);
-
-    if (need > capacity || eventBufferOffset + need > capacity)
-        return 1;
-
-    ServerEventHeader eventHeader;
-    eventHeader.type = SERVER_DELTA_ENTITY_FACING;
-    eventHeader.size = size;
-    memcpy(eventBuffer + eventBufferOffset, &eventHeader, sizeof(eventHeader));
-    eventBufferOffset += sizeof(eventHeader);
-
-    memcpy(eventBuffer + eventBufferOffset, &delta, size);
-    eventBufferOffset += size;
-    return 0;
-}
 
 void NetworkSendEventPacket()
 {
-    char buffer[MAX_PACKET_SIZE];
+
+    if (eventBufferOffset <= 0)
+        return;
+    int totalSize = sizeof(ServerPacketHeader) + eventBufferOffset;
+    char *buffer = malloc(totalSize);
+
     ServerPacketHeader *header = (ServerPacketHeader *)buffer;
 
     header->type = PACKET_SERVER_EVENTS;
     header->size = eventBufferOffset;
-
-    if (header->size <= 0)
-    {
-        // printf("[SERVER] No events to send\n");
-        return;
-    }
-    int totalSize = sizeof(ServerPacketHeader) + header->size;
 
     char *payload = (char *)(buffer + sizeof(ServerPacketHeader));
     memcpy(payload, eventBuffer, header->size);
@@ -193,6 +167,7 @@ void NetworkSendEventPacket()
             printf("Warning: not all bytes sent (%d/%d)\n", sent, totalSize);
         }
     }
+    free(buffer);
     NetworkPrepareEventBuffer();
 }
 

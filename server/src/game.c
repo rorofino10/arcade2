@@ -31,8 +31,8 @@ const Vector2 DEFAULT_BULLET_SIZE = (Vector2){11, 5};
 
 const uint16_t worldSize = 1000;
 
-const SPEED DEFAULT_REDENEMIES_SPEED_INCREASE = 10;
-const EntityID DEFAULT_REDENEMIES_INCREASE = 250;
+const SPEED DEFAULT_REDENEMIES_SPEED_INCREASE = 20;
+const EntityID DEFAULT_REDENEMIES_INCREASE = 3;
 const EntityID DEFAULT_BLUEENEMIES_INCREASE = 1;
 const COOLDOWN DEFAULT_WAVE_REFRESH_COOLDOWN = 2.0f;
 const COOLDOWN DEFAULT_SPAWN_INTERVAL = 0.0f;
@@ -338,9 +338,9 @@ Rectangle MakeRectangleFromCenter(Vector2 center, Vector2 size)
 
 void GenerateWave()
 {
-    // SpawnPowerupShooting();
-    // SpawnPowerupSpeed();
-    // SpawnNeutral();
+    SpawnPowerupShooting();
+    SpawnPowerupSpeed();
+    SpawnNeutral();
     waveManager.isWaveInProgress = true;
     waveManager.waveRefreshCooldownRemaining = waveManager.waveRefreshCooldown;
 
@@ -524,7 +524,7 @@ void GameUpdateNetworkEntities(int type)
     FOR_EACH_ALIVE_ENTITY(id)
     {
         if (type == PACKET_ENTITY_DELTAS)
-            if (!entities[id].dirty && entities[id].type != ENTITY_PLAYER)
+            if (!entities[id].dirty)
                 continue;
         entitiesToSend[entitiesAmountToSend].id = entities[id].id;
         entitiesToSend[entitiesAmountToSend].x = entities[id].position.x;

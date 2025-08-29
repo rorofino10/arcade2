@@ -50,7 +50,7 @@ void ServerTrySnapshotTick(Server *server)
     {
         elapsedTimeBetweenSnapshotTicks -= timeBetweenSnapshotTicks;
         NetworkSendUnreliableEntitiesSnapshot();
-        // NetworkSendUnreliableWaveSnapshot();
+        NetworkSendUnreliableWaveSnapshot();
     }
 }
 
@@ -62,8 +62,6 @@ void ServerTryDeltaTick(Server *server)
         elapsedTimeBetweenDeltaTicks -= timeBetweenDeltaTicks;
         NetworkSendUnreliableEntitiesDeltas();
         NetworkSendUnreliableWaveSnapshot();
-        // NetworkSendEntitiesSnapshot();
-        // NetworkSendWaveSnapshot();
     }
 }
 
@@ -75,6 +73,7 @@ void ServerTryEventTick(Server *server)
         elapsedTimeBetweenEventTicks -= timeBetweenEventTicks;
 
         NetworkSendEventPacket();
+
         GamePushEntityDeltas();
         NetworkSendUnreliableEventPacket();
     }
@@ -220,7 +219,7 @@ void ServerTryAcceptConnection(Server *server)
             uint8_t playerID = GameAssignPlayerToClient(i);
             NetworkSendAssignedPlayerID(i, playerID);
             NetworkSendEntitiesSnapshot();
-            NetworkSendWaveSnapshot();
+            NetworkSendWaveSnapshot(); // Send Reliable Snapshot to have something to start with.
             return;
         }
     }
@@ -282,27 +281,18 @@ void ServerHandleUDPClient(Server *server)
     {
 
         ClientUDPPacketHeader *header = (ClientUDPPacketHeader *)buffer;
-        // printf("[SERVER] Received UDP Packet, type: %d, size:%d", header->type, header->size);
+
         int clientIdx = FindOrAddUDPClient(server, &from);
         if (clientIdx == -1)
             return;
         server->udpClients[clientIdx].timeBetweenHeartbeat = 0.0f; // Reset timer, received a packet
-
-        // char sendBuf[MAX_PACKET_SIZE];
-        // ServerUDPPacketHeader *sendheader = (ServerUDPPacketHeader *)sendBuf;
-        // sendheader->type = PACKET_ASSIGN_PLAYER;
-        // sendheader->sequence = server->udpClients[clientIdx].nextSeq++;
-        // sendheader->lastProcessedBullet = lastProcessedBullet[clientIdx];
-        // sendheader->lastProcessedMovementInput = lastProcessedMovementInput[clientIdx];
-        // sendheader->size = 0;
-        // int sent = sendto(server->fds[1].fd, sendBuf, sizeof(ServerUDPPacketHeader), 0, (struct sockaddr *)&server->udpClients[clientIdx].addr, sizeof(server->udpClients[clientIdx].addr));
-        // printf("Sending to Client[%d] Addr:%s:%d\n", clientIdx, inet_ntoa(server->udpClients[clientIdx].addr.sin_addr), ntohs(server->udpClients[clientIdx].addr.sin_port));
     }
 }
 
 void ServerDisconnectClient(Server *server, int fdsIndex)
 {
-    int clientIndex = fdsIndex - 2;
+    // Disconnect both TCP and UDP client's sockets.
+    int clientIndex = fdsIndex - 2; // First two are Listener and UDP sockets.
     SOCKET s = server->fds[fdsIndex].fd;
 
     printf("Client[%d] disconnected\n", clientIndex);
@@ -344,13 +334,11 @@ void ServerHandleClient(Server *server, int fdsIndex)
             return;
         }
     }
-    char buffer[MAX_PACKET_SIZE];
-    if (header.size > sizeof(buffer)) // sent is bigger than MAX_PACKET_SIZE
-        return;
+    char *buffer = malloc(header.size);
     recvlen = recv(s, buffer, header.size, 0);
     size_t offset = 0;
     int events = 0;
-    while (offset < header.size)
+    while (offset < header.size) // parse Events
     {
         ClientEventHeader *eheader = (ClientEventHeader *)(buffer + offset);
         offset += sizeof(ClientEventHeader);
@@ -365,7 +353,6 @@ void ServerHandleClient(Server *server, int fdsIndex)
         case CLIENT_EVENT_INPUT_AUTHORATIVE_MOVE:
             ClientInputAuthorativeMoveEvent *move = (ClientInputAuthorativeMoveEvent *)edata;
             UpdatePlayerPosition(clientIndex, move->nx, move->ny);
-            // printf("Move nx=%d ny=%d\n", move->nx, move->ny);
             break;
         case CLIENT_EVENT_INPUT_MOVE:
             ClientInputEvent *event = (ClientInputEvent *)edata;
@@ -374,12 +361,12 @@ void ServerHandleClient(Server *server, int fdsIndex)
         case CLIENT_EVENT_INPUT_SHOOT:
             ClientInputShootEvent *shoot = (ClientInputShootEvent *)edata;
             ShootBulletInput(clientIndex, shoot->dx, shoot->dy, shoot->bulletSequence);
-            printf("Client[%d] ShootEvent, sequence %d\n", clientIndex, shoot->bulletSequence);
             break;
         default:
             break;
         }
     }
+    free(buffer);
 }
 
 double getTimeSeconds()
