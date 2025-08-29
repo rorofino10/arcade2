@@ -21,8 +21,6 @@ const uint16_t screenWidth = 800;
 const uint16_t screenHeight = 600;
 const char *gameTitle = "Game Title";
 
-const _Float16 BLUE_ENEMY_BULLETS = 6.0f;
-const _Float16 FULL_CIRCLE = 360.0f;
 const SPEED DEFAULT_BULLET_SPEED = 500.0f;
 const LIFETIME DEFAULT_BULLET_LIFETIME = 2.0f;
 const Vector2 DEFAULT_ENTITY_SIZE = (Vector2){50, 50};
@@ -30,12 +28,6 @@ const Vector2 DEFAULT_ENTITY_FACING = (Vector2){1, 0};
 const Vector2 DEFAULT_BULLET_SIZE = (Vector2){11, 5};
 
 const uint16_t worldSize = 1000;
-
-const SPEED DEFAULT_REDENEMIES_SPEED_INCREASE = 10;
-const EntityID DEFAULT_REDENEMIES_INCREASE = 3;
-const EntityID DEFAULT_BLUEENEMIES_INCREASE = 1;
-const COOLDOWN DEFAULT_WAVE_REFRESH_COOLDOWN = 2.0f;
-const COOLDOWN DEFAULT_SPAWN_INTERVAL = 0.5f;
 
 const double EventTPS = 30.0f;
 const double timeBetweenEventTicks = 1.0 / EventTPS;
@@ -71,19 +63,6 @@ WaveManager waveManager = {
 const uint16_t PLAYER_SAFE_RADIUS = 100;
 const uint16_t ENTITY_SPAWN_RADIUS = 300;
 const _float32_t NEUTRAL_SHOOT_RADIUS = 80.0f;
-
-const LIFETIME DEFAULT_SHAKE_DURATION = 0.5f;
-const _Float16 DEFAULT_SHAKE_INTENSITY = 5.0f;
-LIFETIME shakeLifetime = 0.0f;
-
-const _float32_t DEFAULT_BASE_ZOOM = 1.0f;
-const LIFETIME DEFAULT_ZOOM_DURATION = 2.0f;
-
-const _float32_t DEFAULT_ZOOM_OUT_INTENSITY = 0.8f;
-const _float32_t DEFAULT_ZOOM_IN_INTENSITY = 1 / DEFAULT_ZOOM_OUT_INTENSITY;
-_float32_t zoomBase = DEFAULT_BASE_ZOOM;
-_float32_t zoomIntensity = DEFAULT_BASE_ZOOM;
-LIFETIME zoomLifetime = 0.0f;
 
 typedef enum GameState
 {
@@ -145,6 +124,17 @@ const EntityID entitiesCount = UINT8_MAX - 1;
 EntityID playerID = 0;
 Entity *entities = NULL;
 Entity *clientsideEntities = NULL;
+#define FOR_EACH_ALIVE_ENTITY(i)                 \
+    for (EntityID i = 0; i < entitiesCount; i++) \
+        if (!entities[i].isAlive)                \
+            continue;                            \
+        else
+
+#define FOR_EACH_ALIVE_CLIENTSIDEENTITY(i)       \
+    for (EntityID i = 0; i < entitiesCount; i++) \
+        if (!clientsideEntities[i].isAlive)      \
+            continue;                            \
+        else
 
 // Sequencing
 uint32_t lastBulletSequence = 0;
@@ -210,13 +200,24 @@ void UnloadAllSoundEffects()
 }
 
 /*
-ASSETS - DEFINITIONS - LOAD - UNLOAD
-ASSETS - DEFINITIONS - LOAD - UNLOAD
-ASSETS - DEFINITIONS - LOAD - UNLOAD
-ASSETS - DEFINITIONS - LOAD - UNLOAD
-ASSETS - DEFINITIONS - LOAD - UNLOAD
-ASSETS - DEFINITIONS - LOAD - UNLOAD
+CAMERA - CAMERA - CAMERA
+CAMERA - CAMERA - CAMERA
+CAMERA - CAMERA - CAMERA
+CAMERA - CAMERA - CAMERA
 */
+
+const LIFETIME DEFAULT_SHAKE_DURATION = 0.5f;
+const _Float16 DEFAULT_SHAKE_INTENSITY = 5.0f;
+LIFETIME shakeLifetime = 0.0f;
+
+const _float32_t DEFAULT_BASE_ZOOM = 1.0f;
+const LIFETIME DEFAULT_ZOOM_DURATION = 2.0f;
+
+const _float32_t DEFAULT_ZOOM_OUT_INTENSITY = 0.8f;
+const _float32_t DEFAULT_ZOOM_IN_INTENSITY = 1 / DEFAULT_ZOOM_OUT_INTENSITY;
+_float32_t zoomBase = DEFAULT_BASE_ZOOM;
+_float32_t zoomIntensity = DEFAULT_BASE_ZOOM;
+LIFETIME zoomLifetime = 0.0f;
 
 Camera2D camera = {.offset = (Vector2){screenWidth / 2, screenHeight / 2}, .rotation = 0.0f, .zoom = DEFAULT_BASE_ZOOM};
 
@@ -224,18 +225,67 @@ void ShakeCamera(LIFETIME duration)
 {
     shakeLifetime = duration;
 }
+void ZoomIn()
+{
+    // zoomBase *= DEFAULT_ZOOM_IN_INTENSITY;
+    zoomBase += 0.20f;
+}
 
-#define FOR_EACH_ALIVE_ENTITY(i)                 \
-    for (EntityID i = 0; i < entitiesCount; i++) \
-        if (!entities[i].isAlive)                \
-            continue;                            \
-        else
+void ZoomOut()
+{
+    // zoomBase *= DEFAULT_ZOOM_OUT_INTENSITY;
+    zoomBase -= 0.20f;
+}
+void UpdateCameraMovement()
+{
+    camera.target = entities[playerID].position;
+    if (shakeLifetime > 0.0f)
+    {
+        shakeLifetime -= GetFrameTime();
 
-#define FOR_EACH_ALIVE_CLIENTSIDEENTITY(i)       \
-    for (EntityID i = 0; i < entitiesCount; i++) \
-        if (!clientsideEntities[i].isAlive)      \
-            continue;                            \
+        float offsetX = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
+        float offsetY = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
+
+        float fade = shakeLifetime / DEFAULT_SHAKE_DURATION;
+
+        camera.offset.x += offsetX * DEFAULT_SHAKE_INTENSITY * fade;
+        camera.offset.y += offsetY * DEFAULT_SHAKE_INTENSITY * fade;
+    }
+    if (zoomLifetime > 0.0f)
+    {
+        float zoomChange = 0.0f;
+        zoomLifetime -= GetFrameTime();
+        float elapsed = DEFAULT_ZOOM_DURATION - zoomLifetime;
+
+        float phaseOut = 0.25f;
+        float phaseIn = 0.25f;
+
+        if (elapsed < phaseOut)
+        {
+            float t = elapsed / phaseOut;
+            zoomChange = zoomBase + (zoomIntensity - zoomBase) * t;
+        }
+        else if (elapsed > DEFAULT_ZOOM_DURATION - phaseIn)
+        {
+            float t = (DEFAULT_ZOOM_DURATION - elapsed) / phaseIn;
+            zoomChange = zoomBase + (zoomIntensity - zoomBase) * t;
+        }
         else
+        {
+            zoomChange = zoomIntensity;
+        }
+        camera.zoom = zoomChange;
+    }
+    else
+        camera.zoom = zoomBase;
+}
+
+/*
+SPAWNING - SPAWNING - SPAWNING
+SPAWNING - SPAWNING - SPAWNING
+SPAWNING - SPAWNING - SPAWNING
+SPAWNING - SPAWNING - SPAWNING
+*/
 
 Vector2 RandomSpawnPosition(Vector2 playerPos)
 {
@@ -346,6 +396,25 @@ void EntityShootBullet(EntityID entity)
     NetworkPushInputShootEvent(sh);
 }
 
+/*
+MATH - MATH - MATH - MATH
+MATH - MATH - MATH - MATH
+MATH - MATH - MATH - MATH
+MATH - MATH - MATH - MATH
+*/
+
+bool VectorsAreMoreThanDegreesApart(Vector2 a, Vector2 b, float deg)
+{
+    float rad = deg * DEG2RAD;
+
+    // dot = cos(theta)
+    float dot = a.x * b.x + a.y * b.y;
+
+    float angle = acosf(dot);
+
+    return angle > rad;
+}
+
 Rectangle MakeRectangleFromCenter(Vector2 center, Vector2 size)
 {
     Rectangle rect;
@@ -354,6 +423,20 @@ Rectangle MakeRectangleFromCenter(Vector2 center, Vector2 size)
     rect.width = size.x;
     rect.height = size.y;
     return rect;
+}
+
+/*
+    FUNCTIONS FOR HANDLING SERVER EVENTS
+    FUNCTIONS FOR HANDLING SERVER EVENTS
+    FUNCTIONS FOR HANDLING SERVER EVENTS
+    FUNCTIONS FOR HANDLING SERVER EVENTS
+*/
+
+void handlePlayerDeath(EntityID entityID)
+{
+    if (playerID != entityID)
+        return;
+    gameState = LOST;
 }
 
 void GameHandlePowerupSpeed()
@@ -365,20 +448,6 @@ void GameHandlePowerupShooting()
 {
     PlaySound(soundEffects[SOUND_EFFECT_POWERUP]);
 }
-
-void handlePlayerDeath(EntityID entityID)
-{
-    if (playerID != entityID)
-        return;
-    gameState = LOST;
-}
-
-/*
-    FUNCTIONS FOR HANDLING SERVER EVENTS
-    FUNCTIONS FOR HANDLING SERVER EVENTS
-    FUNCTIONS FOR HANDLING SERVER EVENTS
-    FUNCTIONS FOR HANDLING SERVER EVENTS
-*/
 
 void GameHandleEntityDiedEvent(ServerEntityDiedEvent *event)
 {
@@ -470,18 +539,6 @@ void KillAllEntities()
     }
 }
 
-void ZoomIn()
-{
-    // zoomBase *= DEFAULT_ZOOM_IN_INTENSITY;
-    zoomBase += 0.20f;
-}
-
-void ZoomOut()
-{
-    // zoomBase *= DEFAULT_ZOOM_OUT_INTENSITY;
-    zoomBase -= 0.20f;
-}
-
 void ApplyPlayerInput(ClientInputEvent event)
 {
     Vector2 newPos = Vector2Add(entities[playerID].position, Vector2Scale((Vector2){event.dx, event.dy}, entities[playerID].speed * event.dt));
@@ -505,18 +562,6 @@ void GameReconciliatePlayerPosition(uint32_t serverLastProcessedInput)
     {
         ApplyPlayerInput(pendingInputs[i]);
     }
-}
-
-bool VectorsAreMoreThanDegreesApart(Vector2 a, Vector2 b, float deg)
-{
-    float rad = deg * DEG2RAD;
-
-    // dot = cos(theta)
-    float dot = a.x * b.x + a.y * b.y;
-
-    float angle = acosf(dot);
-
-    return angle > rad;
 }
 
 void Input()
@@ -557,50 +602,6 @@ void Input()
     }
     if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) || IsKeyDown(KEY_SPACE))
         EntityShootBullet(playerID);
-}
-
-void UpdateCameraMovement()
-{
-    camera.target = entities[playerID].position;
-    if (shakeLifetime > 0.0f)
-    {
-        shakeLifetime -= GetFrameTime();
-
-        float offsetX = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
-        float offsetY = ((float)rand() / RAND_MAX) * 2.0f - 1.0f;
-
-        float fade = shakeLifetime / DEFAULT_SHAKE_DURATION;
-
-        camera.offset.x += offsetX * DEFAULT_SHAKE_INTENSITY * fade;
-        camera.offset.y += offsetY * DEFAULT_SHAKE_INTENSITY * fade;
-    }
-    if (zoomLifetime > 0.0f)
-    {
-        float zoomChange = 0.0f;
-        zoomLifetime -= GetFrameTime();
-        float elapsed = DEFAULT_ZOOM_DURATION - zoomLifetime;
-
-        float phaseOut = 0.25f;
-        float phaseIn = 0.25f;
-
-        if (elapsed < phaseOut)
-        {
-            float t = elapsed / phaseOut;
-            zoomChange = zoomBase + (zoomIntensity - zoomBase) * t;
-        }
-        else if (elapsed > DEFAULT_ZOOM_DURATION - phaseIn)
-        {
-            float t = (DEFAULT_ZOOM_DURATION - elapsed) / phaseIn;
-            zoomChange = zoomBase + (zoomIntensity - zoomBase) * t;
-        }
-        else
-        {
-            zoomChange = zoomIntensity;
-        }
-        camera.zoom = zoomChange;
-    }
-    else
-        camera.zoom = zoomBase;
 }
 
 void GameUpdatePlayerID(uint8_t newPlayerID)
